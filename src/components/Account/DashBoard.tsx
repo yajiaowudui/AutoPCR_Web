@@ -14,7 +14,7 @@ import {
     Text,
 } from '@chakra-ui/react';
 import { FiActivity, FiBook, FiCheck, FiCopy, FiGrid, FiKey, FiLayers, FiList, FiStar, FiTarget, FiUpload, FiUserMinus, FiUserPlus, FiUserX, FiX } from 'react-icons/fi';
-import { Radio, RadioGroup } from '../../components/ui/radio';
+import { RadioGroup } from '../../components/ui/radio';
 import React, { ChangeEvent, useMemo, useRef } from 'react';
 import { Skeleton, SkeletonText } from '../../components/ui/skeleton';
 import { clearAccounts, deleteAccount, getAccountDailyResultList, getUserInfo, putUserInfo } from '@api/Account';
@@ -1204,18 +1204,6 @@ function AccountInfo({
                                 alignItems="center"
                                 lineHeight="1"
                             >
-                                <Radio value={alias} colorPalette="purple" />
-                            </Box>
-                            <Box
-                                maxW="70%"
-                                minW={0}
-                                onClick={(e) => e.stopPropagation()}
-                                display="flex"
-                                alignItems="center"
-                                h="2rem"
-                                fontSize="lg"
-                                flex="0 1 auto"
-                            >
                                 {nameInput}
                             </Box>
                             {displayName !== alias && (
@@ -1287,6 +1275,10 @@ function AccountInfo({
                                 <Tag.StartElement>{statusMeta.icon}</Tag.StartElement>
                                 <Tag.Label>{cleanStatus}</Tag.Label>
                             </Tag.Root>
+                        </Flex>
+                        <Flex justify="space-between" align="center">
+                            <Text fontSize="xs" color="fg.muted">体力</Text>
+                            <Text fontSize="xs" fontWeight="bold">{account.stamina?.text ?? '--/--'}</Text>
                         </Flex>
                     </Box>
                 </Card.Body>

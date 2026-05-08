@@ -107,16 +107,9 @@ export default defineConfig(({ mode }) => {
 		rollupOptions: {
 		  output: {
 			manualChunks(id) {
-			  if (id.includes('node_modules')) {
-                if (id.includes('xlsx') || id.includes('file-saver')) return 'xlsx';
-                if (id.includes('react-icons')) return 'icons';
-                if (id.includes('@chakra-ui') || id.includes('@emotion') || id.includes('framer-motion')) return 'chakra';
-                if (id.includes('@tanstack') || id.includes('react-location')) return 'tanstack';
-                if (id.includes('axios')) return 'utils';
-                if (id.includes('react') || id.includes('react-dom')) return 'react-vendor';
-                
-				return 'vendor'
-			  }
+			  if (!id.includes('node_modules')) return;
+              if (id.includes('xlsx') || id.includes('file-saver')) return 'xlsx';
+              if (id.includes('react-icons')) return 'icons';
 			}
 		  }
 		}
