@@ -577,6 +577,8 @@ export default function Config({ alias, value, info }: ConfigProps) {
             return <ConfigInt alias={alias} value={value} info={info} />;
         case 'single':
             return <ConfigSingle alias={alias} value={value} info={info} />;
+        case 'single_search':
+            return <ConfigSingleSearch alias={alias} value={value} info={info} />;
         case 'multi':
             return <ConfigMulti alias={alias} value={value} info={info} />;
         case 'time':

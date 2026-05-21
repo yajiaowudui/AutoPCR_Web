@@ -95,4 +95,4 @@ export interface Candidate {
 }
 
 export type ConfigValue = number | string | boolean | (string | number)[];
-export type ConfigType = "bool" | "int" | "single" | "multi" | "time" | "text" | "multi_search";
+export type ConfigType = "bool" | "int" | "single" | "single_search" | "multi" | "time" | "text" | "multi_search";

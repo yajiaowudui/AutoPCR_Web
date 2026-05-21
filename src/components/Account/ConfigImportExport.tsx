@@ -74,6 +74,10 @@ const ConfigImportExport = ({ alias, areas, onImportSuccess }: ConfigIOProps) =>
             case 'single':
                 if (typeof value === "string" || typeof value === "number") return value;
                 break
+            case 'single':
+            case 'single_search':
+                if (typeof value === "number" || typeof value === "string") return value;
+                break
             case 'int':
                 if (typeof value === "number") return value;
                 break
