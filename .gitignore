@@ -27,3 +27,7 @@ stats.html
 # Lockfiles (pnpm is the package manager; ignore npm/yarn locks)
 package-lock.json
 yarn.lock
+*.zip
+
+# 保留 Git Bash 版打包脚本（全局 gitignore 忽略了 *.sh，这里重新包含）
+!build_web_zip.sh
