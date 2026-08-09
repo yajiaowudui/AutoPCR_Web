@@ -23,3 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 stats.html
+
+# Lockfiles (pnpm is the package manager; ignore npm/yarn locks)
+package-lock.json
+yarn.lock
