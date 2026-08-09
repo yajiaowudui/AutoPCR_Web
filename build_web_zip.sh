@@ -110,20 +110,42 @@ ZIP_PATH="$REPO_ROOT/$ZIP_NAME"
 rm -f "$ZIP_PATH"
 
 echo "[3/5] Packaging $ZIP_NAME ..."
-# 用 zip 命令进入 dist 目录打包，确保 zip 内不含 dist 外层目录
-(cd dist && zip -r -q "$ZIP_PATH" .)
+if command -v zip >/dev/null 2>&1; then
+  # 有 zip 命令（Linux/macOS/装了 zip 的 Git Bash）：进入 dist 打包，避免外层目录
+  (cd dist && zip -r -q "$ZIP_PATH" .)
+elif command -v powershell.exe >/dev/null 2>&1; then
+  # Windows Git Bash 通常没有 zip，回退用 PowerShell 的 Compress-Archive。
+  # 注意：bash 里是 MSYS 路径(/e/...)，原生 powershell.exe 不识别，
+  # 需用 cygpath 转成 Windows 路径(E:\...)，并先 Set-Location 到仓库根。
+  WIN_REPO="$(cygpath -w "$REPO_ROOT")"
+  WIN_DIST="$(cygpath -w "$REPO_ROOT/dist")"
+  WIN_ZIP="$(cygpath -w "$ZIP_PATH")"
+  PS_CMD="Set-Location '${WIN_REPO}'; Compress-Archive -Path '${WIN_DIST}\\*' -DestinationPath '${WIN_ZIP}' -Force"
+  powershell.exe -NoProfile -Command "$PS_CMD"
+elif command -v powershell >/dev/null 2>&1; then
+  WIN_REPO="$(cygpath -w "$REPO_ROOT")"
+  WIN_DIST="$(cygpath -w "$REPO_ROOT/dist")"
+  WIN_ZIP="$(cygpath -w "$ZIP_PATH")"
+  PS_CMD="Set-Location '${WIN_REPO}'; Compress-Archive -Path '${WIN_DIST}\\*' -DestinationPath '${WIN_ZIP}' -Force"
+  powershell -NoProfile -Command "$PS_CMD"
+else
+  echo "ERROR: neither 'zip' nor PowerShell 'Compress-Archive' is available." >&2
+  exit 1
+fi
 
 # ---- 同步到本机后端 ClientApp（本地测试用） ----
+# LOCAL_BACKEND_CLIENTAPP 是 Windows 路径，bash 不识别，需用 cygpath 转成 MSYS 路径(/e/...)
+BACKEND_MSYS="$(cygpath -u "$LOCAL_BACKEND_CLIENTAPP" 2>/dev/null || echo "$LOCAL_BACKEND_CLIENTAPP")"
 if [ "$SKIP_LOCAL" = "1" ]; then
   echo "[4/5] Skip local sync (--skip-local)."
-elif [ -d "$LOCAL_BACKEND_CLIENTAPP" ]; then
-  echo "[4/5] Syncing to local backend: $LOCAL_BACKEND_CLIENTAPP"
+elif [ -d "$BACKEND_MSYS" ]; then
+  echo "[4/5] Syncing to local backend: $BACKEND_MSYS"
   # 清空旧的 ClientApp，避免残留旧资源
-  rm -rf "$LOCAL_BACKEND_CLIENTAPP"/*
-  cp -R dist/. "$LOCAL_BACKEND_CLIENTAPP"/
+  rm -rf "$BACKEND_MSYS"/*
+  cp -R dist/. "$BACKEND_MSYS"/
   echo "  Local backend synced (version $VERSION)."
 else
-  echo "[4/5] Local backend path not found, skip sync: $LOCAL_BACKEND_CLIENTAPP"
+  echo "[4/5] Local backend path not found, skip sync: $BACKEND_MSYS"
 fi
 
 echo ""
