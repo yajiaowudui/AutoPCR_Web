@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
 # ============================================================
-# 构建并打包 AutoPCR_Web 前端，生成上传用的 zip（Git Bash / Linux / macOS 通用）
+# 构建并打包 AutoPCR_Web 前端，生成上传用的 zip，并同步到本机后端
+# （Git Bash / Linux / macOS 通用）
 # ============================================================
 # 用法（在前端仓库根目录运行）:
-#   ./build_web_zip.sh              # 版本过期时自动构建，然后打包
+#   ./build_web_zip.sh              # 版本过期时自动构建，然后打包 + 同步本机后端
 #   ./build_web_zip.sh --force      # 强制重新构建
+#   ./build_web_zip.sh --skip-local # 只打包 zip，不同步本机后端
 #
 # 输出:
 #   dist/...                  构建产物（内含 .web_version 版本标记）
 #   autopcr_web_<版本号>.zip  上传用压缩包（内含 index.html + assets/，与后端 ClientApp 目录结构一致）
+#
+# 同步:
+#   构建后会把 dist 复制到本机后端 ClientApp，方便本地直接启动后端测试。
+#   目标路径由 LOCAL_BACKEND_CLIENTAPP 控制。
 #
 # 上传 zip 到远程服务器后，在 autopcr 模块目录运行:
 #   python3 _download_web.py autopcr_web_<版本号>.zip
@@ -22,15 +28,20 @@
 set -e
 
 FORCE=0
+SKIP_LOCAL=0
 for arg in "$@"; do
-  if [ "$arg" = "--force" ] || [ "$arg" = "-f" ]; then
-    FORCE=1
-  fi
+  case "$arg" in
+    --force|-f) FORCE=1 ;;
+    --skip-local) SKIP_LOCAL=1 ;;
+  esac
 done
 
 # ---- 仓库根目录（脚本所在位置），自适应，无写死路径 ----
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$REPO_ROOT"
+
+# ---- 本机后端 ClientApp 目录（用于本地测试同步，可改为你的实际路径） ----
+LOCAL_BACKEND_CLIENTAPP="E:/Project/HoshinoBot/hoshino/modules/autopcr/autopcr/http_server/ClientApp"
 
 # ---- 自动检测包管理器：pnpm 优先，回退 npm ----
 PM=""
@@ -50,10 +61,10 @@ echo "AutoPCR_Web version: $VERSION"
 
 # ---- 缺少依赖时安装 ----
 if [ ! -d "node_modules" ]; then
-  echo "[1/4] Installing dependencies ($PM install) ..."
+  echo "[1/5] Installing dependencies ($PM install) ..."
   "$PM" install
 else
-  echo "[1/4] node_modules present, skip install."
+  echo "[1/5] node_modules present, skip install."
 fi
 
 # ---- 判断是否需要构建（解决版本更新问题） ----
@@ -76,12 +87,12 @@ else
 fi
 
 if [ "$NEED_BUILD" = "1" ]; then
-  echo "[2/4] Building frontend ($PM build) ..."
+  echo "[2/5] Building frontend ($PM build) ..."
   # 清理旧 dist，避免新旧资源混用
   rm -rf dist
   "$PM" run build
 else
-  echo "[2/4] dist is up-to-date (version $VERSION), skip build."
+  echo "[2/5] dist is up-to-date (version $VERSION), skip build."
 fi
 
 # ---- 校验构建产物 ----
@@ -98,12 +109,25 @@ ZIP_NAME="autopcr_web_${VERSION}.zip"
 ZIP_PATH="$REPO_ROOT/$ZIP_NAME"
 rm -f "$ZIP_PATH"
 
-echo "[3/4] Packaging $ZIP_NAME ..."
+echo "[3/5] Packaging $ZIP_NAME ..."
 # 用 zip 命令进入 dist 目录打包，确保 zip 内不含 dist 外层目录
 (cd dist && zip -r -q "$ZIP_PATH" .)
 
+# ---- 同步到本机后端 ClientApp（本地测试用） ----
+if [ "$SKIP_LOCAL" = "1" ]; then
+  echo "[4/5] Skip local sync (--skip-local)."
+elif [ -d "$LOCAL_BACKEND_CLIENTAPP" ]; then
+  echo "[4/5] Syncing to local backend: $LOCAL_BACKEND_CLIENTAPP"
+  # 清空旧的 ClientApp，避免残留旧资源
+  rm -rf "$LOCAL_BACKEND_CLIENTAPP"/*
+  cp -R dist/. "$LOCAL_BACKEND_CLIENTAPP"/
+  echo "  Local backend synced (version $VERSION)."
+else
+  echo "[4/5] Local backend path not found, skip sync: $LOCAL_BACKEND_CLIENTAPP"
+fi
+
 echo ""
-echo "[4/4] Build done!"
+echo "[5/5] Build done!"
 echo "  Frontend output: $REPO_ROOT/dist  (version marker: $VERSION)"
 echo "  Upload file:     $ZIP_PATH"
 echo ""
