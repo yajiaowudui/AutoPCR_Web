@@ -110,26 +110,27 @@ ZIP_PATH="$REPO_ROOT/$ZIP_NAME"
 rm -f "$ZIP_PATH"
 
 echo "[3/5] Packaging $ZIP_NAME ..."
-if command -v zip >/dev/null 2>&1; then
-  # 有 zip 命令（Linux/macOS/装了 zip 的 Git Bash）：进入 dist 打包，避免外层目录
+# 优先用 Python zipfile 打包：生成的 zip 内部使用正斜杠 '/'，
+# 在任何系统（尤其 Linux 后端）都能正确解压，避免 Windows
+# Compress-Archive 反斜杠分隔符导致的问题。
+if command -v python >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1; then
+  PY_BIN="python"
+  command -v python >/dev/null 2>&1 || PY_BIN="python3"
+  "$PY_BIN" - "$ZIP_PATH" "$REPO_ROOT/dist" <<'PYEOF'
+import os, sys, zipfile
+zip_path, dist_dir = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+    for root, dirs, files in os.walk(dist_dir):
+        for f in files:
+            full = os.path.join(root, f)
+            rel = os.path.relpath(full, dist_dir).replace(os.sep, '/')  # 强制正斜杠
+            zf.write(full, rel)
+PYEOF
+elif command -v zip >/dev/null 2>&1; then
+  # 有 zip 命令（Linux/macOS）：进入 dist 打包，避免外层目录（zip 本身用正斜杠）
   (cd dist && zip -r -q "$ZIP_PATH" .)
-elif command -v powershell.exe >/dev/null 2>&1; then
-  # Windows Git Bash 通常没有 zip，回退用 PowerShell 的 Compress-Archive。
-  # 注意：bash 里是 MSYS 路径(/e/...)，原生 powershell.exe 不识别，
-  # 需用 cygpath 转成 Windows 路径(E:\...)，并先 Set-Location 到仓库根。
-  WIN_REPO="$(cygpath -w "$REPO_ROOT")"
-  WIN_DIST="$(cygpath -w "$REPO_ROOT/dist")"
-  WIN_ZIP="$(cygpath -w "$ZIP_PATH")"
-  PS_CMD="Set-Location '${WIN_REPO}'; Compress-Archive -Path '${WIN_DIST}\\*' -DestinationPath '${WIN_ZIP}' -Force"
-  powershell.exe -NoProfile -Command "$PS_CMD"
-elif command -v powershell >/dev/null 2>&1; then
-  WIN_REPO="$(cygpath -w "$REPO_ROOT")"
-  WIN_DIST="$(cygpath -w "$REPO_ROOT/dist")"
-  WIN_ZIP="$(cygpath -w "$ZIP_PATH")"
-  PS_CMD="Set-Location '${WIN_REPO}'; Compress-Archive -Path '${WIN_DIST}\\*' -DestinationPath '${WIN_ZIP}' -Force"
-  powershell -NoProfile -Command "$PS_CMD"
 else
-  echo "ERROR: neither 'zip' nor PowerShell 'Compress-Archive' is available." >&2
+  echo "ERROR: no 'python'/'zip' available for packaging." >&2
   exit 1
 fi
 

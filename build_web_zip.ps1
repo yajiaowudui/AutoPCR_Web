@@ -99,7 +99,20 @@ $ZipPath = Join-Path $RepoRoot $ZipName
 if (Test-Path $ZipPath) { Remove-Item $ZipPath }
 
 Write-Host "[3/5] Packaging $ZipName ..." -ForegroundColor Yellow
-Compress-Archive -Path "dist\*" -DestinationPath $ZipPath -Force
+# 用 Python zipfile 打包，确保 zip 内部使用正斜杠 '/'，
+# 避免 Compress-Archive 反斜杠分隔符导致 Linux 后端解压错误。
+$DistDir = Join-Path $RepoRoot "dist"
+$pyCode = @'
+import os, sys, zipfile
+zip_path, dist_dir = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+    for root, dirs, files in os.walk(dist_dir):
+        for f in files:
+            full = os.path.join(root, f)
+            rel = os.path.relpath(full, dist_dir).replace(os.sep, '/')
+            zf.write(full, rel)
+'@
+python -c $pyCode $ZipPath $DistDir
 
 # ---- 同步到本机后端 ClientApp（本地测试用） ----
 if ($SkipLocal) {
