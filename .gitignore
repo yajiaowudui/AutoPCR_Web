@@ -29,5 +29,14 @@ package-lock.json
 yarn.lock
 *.zip
 
-# 保留 Git Bash 版打包脚本（全局 gitignore 忽略了 *.sh，这里重新包含）
+# 保留 Git Bash 版打包脚本（全局 gitignore 可能忽略 *.sh）
 !build_web_zip.sh
+.vite-dev*.log
+.pnpm-store/
+
+# 本地审计导出
+audit/*
+!audit/backend-pr/
+
+.commit-msg.txt
+_tmp_autopcr_patchgen/
