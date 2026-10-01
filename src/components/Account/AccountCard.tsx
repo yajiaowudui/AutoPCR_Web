@@ -104,7 +104,14 @@ export function AccountInfo({
         const nameForUi = displayNameRef.current || alias;
         toaster.create({ type: 'info', title: `开始为${nameForUi}清理日常...` });
         try {
-            const res = await postAccountAreaDaily(alias);
+            let lastProgressLine = '';
+            const res = await postAccountAreaDaily(alias, (progress) => {
+                const progressLines = progress.split('\n').filter(Boolean);
+                const currentLine = progressLines[progressLines.length - 1] || '';
+                if (!currentLine || currentLine === lastProgressLine) return;
+                lastProgressLine = currentLine;
+                toaster.create({ type: 'info', title: `${nameForUi}清日常进度`, description: currentLine, duration: 5000 });
+            });
             updateAccountInfo(res);
             void emitDailyFinished(alias);
 

@@ -147,7 +147,14 @@ function AccountComponent() {
         toaster.create({ type: 'info', title: `开始为${nameForUi}清理日常...` });
 
         try {
-            const res = await postAccountAreaDaily(a);
+            let lastProgressLine = '';
+            const res = await postAccountAreaDaily(a, (progress) => {
+                const progressLines = progress.split('\n').filter(Boolean);
+                const currentLine = progressLines[progressLines.length - 1] || '';
+                if (!currentLine || currentLine === lastProgressLine) return;
+                lastProgressLine = currentLine;
+                toaster.create({ type: 'info', title: `${nameForUi}清日常进度`, description: currentLine, duration: 5000 });
+            });
             void emitDailyFinished(a);
             // 以下三个都是「操作结果告知/全局标记」：与用户切到哪无关，不因切号丢失（与失败 toast 口径对称）
             sessionStorage.setItem('autopcr_need_refresh_dashboard', '1');

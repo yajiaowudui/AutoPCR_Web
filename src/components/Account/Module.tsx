@@ -135,7 +135,14 @@ export default function Module({ alias, areaKey, areaName, config, info, isOpen,
         patchBusy(alias, true);
         toaster.create({ type: 'info', title: '开始执行' + info?.name + "..." });
         onOpen();
-        postAccountAreaSingle(alias, info?.key).then(async (res) => {
+        let lastProgressLine = '';
+        postAccountAreaSingle(alias, info?.key, (progress) => {
+            const progressLines = progress.split('\n').filter(Boolean);
+            const currentLine = progressLines[progressLines.length - 1] || '';
+            if (!currentLine || currentLine === lastProgressLine) return;
+            lastProgressLine = currentLine;
+            toaster.create({ type: 'info', title: `${info?.name}执行进度`, description: currentLine, duration: 5000 });
+        }).then(async (res) => {
             toaster.create({ type: 'success', title: '执行成功' });
             // 先解除 loading 再弹结果：无论结果窗怎么关，按钮圈都会正常结束
             onClose();

@@ -11,6 +11,60 @@ const accountConfigCache = new Map<string, ModuleResponse>();
 const accountConfigRequests = new Map<string, Promise<ModuleResponse>>();
 let accountConfigCacheVersion = 0;
 
+interface BackgroundJobResponse<T> {
+  job_id: string;
+  status: "running" | "completed" | "failed";
+  order: string;
+  progress: string;
+  result: T | null;
+  error: string;
+}
+
+async function getActiveBackgroundJob<T>(alias: string) {
+  const response = await API.get<BackgroundJobResponse<T> | null>(
+    `/account/${alias}/active_background_job`,
+    { validateStatus: status => status === 200 || status === 204 },
+  );
+  return response.status === 200 ? response.data : null;
+}
+
+async function waitForBackgroundJob<T>(
+  alias: string,
+  expectedOrder: string,
+  job: BackgroundJobResponse<T>,
+  onProgress?: (progress: string) => void,
+) {
+  if (job.order !== expectedOrder) {
+    throw new Error(`该账号正在执行${job.order === "daily" ? "清日常" : job.order}，请等待完成`);
+  }
+
+  let currentJob = job;
+  let lastProgress = "";
+  while (currentJob.status === "running") {
+    if (currentJob.progress && currentJob.progress !== lastProgress) {
+      lastProgress = currentJob.progress;
+      onProgress?.(currentJob.progress);
+    }
+    await new Promise(resolve => window.setTimeout(resolve, 5000));
+    const statusResponse = await API.get<BackgroundJobResponse<T>>(
+      `/account/${alias}/background_job/${currentJob.job_id}`,
+      { timeout: 30 * 1000 },
+    );
+    currentJob = statusResponse.data;
+  }
+
+  if (currentJob.progress && currentJob.progress !== lastProgress) {
+    onProgress?.(currentJob.progress);
+  }
+  if (currentJob.status === "failed") {
+    throw new Error(currentJob.error || "后台任务执行失败");
+  }
+  if (currentJob.result === null) {
+    throw new Error("后台任务已完成，但没有返回结果");
+  }
+  return currentJob.result;
+}
+
 const accountConfigCacheKey = (alias: string, area: string) => `${alias}\u0000${area}`;
 
 function cacheAccountConfig(key: string, config: ModuleResponse) {
@@ -200,20 +254,41 @@ export async function putAccountConfigs(alias: string, configs: Record<string, C
   return response.data;
 }
 
-export async function postAccountAreaDaily(alias: string) {
-  const response = await API.post<AccountInfo>(`/account/${alias}/do_daily`, {}, {
-    timeout: 10 * 60 * 1000,
+export async function postAccountAreaDaily(alias: string, onProgress?: (progress: string) => void) {
+  const activeJob = await getActiveBackgroundJob<AccountInfo>(alias);
+  if (activeJob) {
+    return waitForBackgroundJob(alias, "daily", activeJob, onProgress);
+  }
+
+  const response = await API.post<AccountInfo | BackgroundJobResponse<AccountInfo>>(`/account/${alias}/do_daily`, {}, {
+    timeout: 30 * 1000,
   });
-  return response.data;
+  if (response.status !== 202) {
+    return response.data as AccountInfo;
+  }
+  return waitForBackgroundJob(alias, "daily", response.data as BackgroundJobResponse<AccountInfo>, onProgress);
 }
 
-export async function postAccountAreaSingle(alias: string, module: string) {
-  const response = await API.post<ResultInfo[]>(`/account/${alias}/do_single`, {
+export async function postAccountAreaSingle(
+  alias: string,
+  module: string,
+  onProgress?: (progress: string) => void,
+) {
+  const activeJob = await getActiveBackgroundJob<ResultInfo[]>(alias);
+  if (activeJob) {
+    return waitForBackgroundJob(alias, module, activeJob, onProgress);
+  }
+
+  const response = await API.post<ResultInfo[] | BackgroundJobResponse<ResultInfo[]>>(`/account/${alias}/do_single`, {
     order: module
   }, {
-    timeout: 10 * 60 * 1000,
+    timeout: 30 * 1000,
   });
-  return response.data;
+  if (response.status !== 202) {
+    return response.data as ResultInfo[];
+  }
+
+  return waitForBackgroundJob(alias, module, response.data as BackgroundJobResponse<ResultInfo[]>, onProgress);
 }
 
 export async function getAccountDailyResultList(alias: string) {
