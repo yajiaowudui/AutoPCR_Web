@@ -34,10 +34,28 @@ const AUTO_GROWTH_TARGET_ONLY_KEYS = new Set([
     'unit_auto_growth_unique1_level',
     'unit_auto_growth_exceed',
 ]);
+const UNIT_PROMOTE_AUTO_TO_MAX_KEY = 'unit_promote_auto_to_max';
+const UNIT_PROMOTE_MANUAL_TARGET_KEYS = new Set([
+    'unit_promote_level',
+    'unit_promote_rank',
+    'unit_promote_skill_ub',
+    'unit_promote_skill_s1',
+    'unit_promote_skill_s2',
+    'unit_promote_skill_ex',
+    'unit_promote_equip_0',
+    'unit_promote_equip_1',
+    'unit_promote_equip_2',
+    'unit_promote_equip_3',
+    'unit_promote_equip_4',
+    'unit_promote_equip_5',
+]);
 
 /** 根据自动培养开关隐藏已由内置策略接管的手动目标设置。 */
 function shouldShowConfig(key: string, config: Record<string, ConfigValue>): boolean {
     if (config[AUTO_GROWTH_MODE_KEY] === AUTO_GROWTH_AS_POSSIBLE && AUTO_GROWTH_TARGET_ONLY_KEYS.has(key)) {
+        return false;
+    }
+    if (config[UNIT_PROMOTE_AUTO_TO_MAX_KEY] === true && UNIT_PROMOTE_MANUAL_TARGET_KEYS.has(key)) {
         return false;
     }
     return true;
