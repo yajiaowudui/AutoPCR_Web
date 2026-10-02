@@ -27,6 +27,22 @@ interface ModuleProps extends React.ComponentProps<typeof Card.Root> {
     onConfigUpdate?: (key: string, value: ConfigValue) => void
 }
 
+const AUTO_GROWTH_MODE_KEY = 'unit_auto_growth_mode';
+const AUTO_GROWTH_AS_POSSIBLE = '能升则升';
+const AUTO_GROWTH_TARGET_ONLY_KEYS = new Set([
+    'unit_auto_growth_unique2_level',
+    'unit_auto_growth_unique1_level',
+    'unit_auto_growth_exceed',
+]);
+
+/** 根据自动培养开关隐藏已由内置策略接管的手动目标设置。 */
+function shouldShowConfig(key: string, config: Record<string, ConfigValue>): boolean {
+    if (config[AUTO_GROWTH_MODE_KEY] === AUTO_GROWTH_AS_POSSIBLE && AUTO_GROWTH_TARGET_ONLY_KEYS.has(key)) {
+        return false;
+    }
+    return true;
+}
+
 export default function Module({ alias, areaKey, areaName, config, info, isOpen, onOpen, onClose, onConfigUpdate, ...rest }: ModuleProps) {
 
     /** 一键把炼成属性1-4全部设为同一属性（2物攻 4魔攻 12物贯 13法贯），乐观回写+失败回滚（仅还原仍等于乐观值的键，避免覆盖用户手改） */
@@ -346,7 +362,7 @@ export default function Module({ alias, areaKey, areaName, config, info, isOpen,
                                 <Stack gap='3.5'>
                                     <Heading size='sm' color="fg.subtle">设置项</Heading>
                                     {
-                                        info?.config_order.map((key) => (
+                                        info?.config_order.filter((key) => shouldShowConfig(key, config)).map((key) => (
                                             <Fragment key={key}>
                                                 <Config
                                                     alias={alias}
