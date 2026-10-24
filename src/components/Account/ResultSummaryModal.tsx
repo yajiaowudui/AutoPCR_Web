@@ -13,7 +13,7 @@ import NiceModal, { useModal } from '@ebay/nice-modal-react';
 export interface ResultSummaryRow {
     alias: string;
     name: string;
-    status: '成功' | '失败';
+    status: '成功' | '失败' | '警告' | '中止' | '错误' | '跳过' | '待确认';
     /** 失败原因摘要（成功时为空） */
     detail?: string;
 }
@@ -26,7 +26,7 @@ interface ResultSummaryProps {
 /** 执行结果汇总窗：一行一个账号（可带失败原因），替代原批量结果表 */
 const ResultSummaryModal = NiceModal.create(({ title, rows }: ResultSummaryProps) => {
     const modal = useModal();
-    const okCount = rows.filter((r) => r.status === '成功').length;
+    const okCount = rows.filter((r) => r.status === '成功' || r.status === '跳过').length;
     const failCount = rows.length - okCount;
     const finish = async () => {
         modal.resolve();
@@ -40,7 +40,7 @@ const ResultSummaryModal = NiceModal.create(({ title, rows }: ResultSummaryProps
                 <ModalCloseButton />
                 <ModalBody>
                     <Text fontSize="sm" color="fg.muted" mb={2}>
-                        成功 {okCount} / 失败 {failCount}
+                        完成 {okCount} / 需关注 {failCount}
                     </Text>
                     <Box maxH="55vh" overflowY="auto" p={2} borderRadius="md" borderWidth="1px" borderColor="border" bg="bg.panel">
                         {rows.map((row) => (
@@ -54,7 +54,7 @@ const ResultSummaryModal = NiceModal.create(({ title, rows }: ResultSummaryProps
                                             {row.detail}
                                         </Text>
                                     )}
-                                    <Text fontSize="sm" color={row.status === '成功' ? 'green.fg' : 'red.fg'} fontWeight="bold">
+                                    <Text fontSize="sm" color={row.status === '成功' || row.status === '跳过' ? 'green.fg' : row.status === '警告' || row.status === '中止' || row.status === '待确认' ? 'orange.fg' : 'red.fg'} fontWeight="bold">
                                         {row.status}
                                     </Text>
                                 </Flex>

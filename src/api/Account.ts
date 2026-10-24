@@ -1,5 +1,7 @@
 import { ModuleResult } from '@interfaces/ModuleResult';
-import { API } from '@api/APIUtils';
+import { API, getErrorMessage } from '@api/APIUtils';
+import { isAxiosError } from 'axios';
+import { startTask, updateTask, resultStatus } from './taskProgress';
 import { AccountResponse, ValidateResponse, RunningStatusResponse } from '@interfaces/Account';
 import { DefaultResponse } from '@interfaces/DefaultResponse';
 import { ConfigValue, ModuleResponse } from '@interfaces/Module';
@@ -18,12 +20,13 @@ interface BackgroundJobResponse<T> {
   progress: string;
   result: T | null;
   error: string;
+  summary?: string;
 }
 
 async function getActiveBackgroundJob<T>(alias: string) {
   const response = await API.get<BackgroundJobResponse<T> | null>(
-    `/account/${alias}/active_background_job`,
-    { validateStatus: status => status === 200 || status === 204 },
+    `/account/${encodeURIComponent(alias)}/active_background_job`,
+    { validateStatus: status => status === 200 || status === 204, skipErrorHandler: true },
   );
   return response.status === 200 ? response.data : null;
 }
@@ -40,29 +43,120 @@ async function waitForBackgroundJob<T>(
 
   let currentJob = job;
   let lastProgress = "";
+  let failures = 0;
   while (currentJob.status === "running") {
     if (currentJob.progress && currentJob.progress !== lastProgress) {
       lastProgress = currentJob.progress;
       onProgress?.(currentJob.progress);
     }
     await new Promise(resolve => window.setTimeout(resolve, 5000));
-    const statusResponse = await API.get<BackgroundJobResponse<T>>(
-      `/account/${alias}/background_job/${currentJob.job_id}`,
-      { timeout: 30 * 1000 },
-    );
-    currentJob = statusResponse.data;
+    try {
+      const statusResponse = await API.get<BackgroundJobResponse<T>>(
+        `/account/${encodeURIComponent(alias)}/background_job/${currentJob.job_id}`,
+        { timeout: 30 * 1000, skipErrorHandler: true },
+      );
+      currentJob = statusResponse.data;
+      if (failures > 0) lastProgress = '';
+      failures = 0;
+    } catch (error) {
+      const transient = isAxiosError(error) && (!error.response || error.response.status >= 500);
+      if (isAxiosError(error) && error.response?.status === 404) {
+        throw new TaskStatusUnknown('任务记录已失效，服务器可能已重启。请查看账号最新结果后再决定是否重新执行。');
+      }
+      if (!transient) throw error;
+      failures += 1;
+      onProgress?.(`暂时无法获取进度，正在重新连接（${failures}/3）；后台任务仍可能在执行，请勿重复提交。`);
+      if (failures >= 3) {
+        throw new TaskStatusUnknown('暂时无法确认执行结果。任务可能仍在后台运行，网络恢复后点击原任务按钮可继续查看进度。');
+      }
+    }
   }
 
-  if (currentJob.progress && currentJob.progress !== lastProgress) {
-    onProgress?.(currentJob.progress);
+  if (currentJob.progress || currentJob.summary) {
+    onProgress?.([currentJob.summary, currentJob.progress].filter(Boolean).join('\n'));
   }
   if (currentJob.status === "failed") {
+    rememberJob(alias, expectedOrder);
     throw new Error(currentJob.error || "后台任务执行失败");
   }
   if (currentJob.result === null) {
     throw new Error("后台任务已完成，但没有返回结果");
   }
   return currentJob.result;
+}
+
+class TaskStatusUnknown extends Error {}
+
+const pendingJobKey = (alias: string, order: string) => `autopcr_pending_job_${alias}_${order}`;
+function rememberJob(alias: string, order: string, jobId?: string) {
+  try {
+    if (jobId) sessionStorage.setItem(pendingJobKey(alias, order), jobId);
+    else sessionStorage.removeItem(pendingJobKey(alias, order));
+  } catch { /* 存储不可用时仍可在当前页面跟踪任务 */ }
+}
+
+async function getPendingJob<T>(alias: string, order: string) {
+  let jobId: string | null = null;
+  try { jobId = sessionStorage.getItem(pendingJobKey(alias, order)); } catch { /* 忽略 */ }
+  if (!jobId) return null;
+  try {
+    const response = await API.get<BackgroundJobResponse<T>>(
+      `/account/${encodeURIComponent(alias)}/background_job/${encodeURIComponent(jobId)}`, { skipErrorHandler: true });
+    return response.data;
+  } catch (error) {
+    if (isAxiosError(error) && error.response?.status === 404) rememberJob(alias, order);
+    throw new TaskStatusUnknown('暂时无法恢复上次任务的结果，请先查看账号最新结果后再决定是否重新执行。');
+  }
+}
+
+async function runAccountTask<T extends AccountInfo | ResultInfo[]>(
+  alias: string, order: string, title: string,
+  submit: () => Promise<{ status: number; data: T | BackgroundJobResponse<T> }>,
+  onProgress?: (progress: string) => void,
+) {
+  const id = startTask(alias, title);
+  const progress = (message: string) => {
+    updateTask(id, { progress: message });
+    onProgress?.(message);
+  };
+  try {
+    let activeJob = await getPendingJob<T>(alias, order) || await getActiveBackgroundJob<T>(alias);
+    let result: T;
+    if (activeJob) {
+      if (activeJob.order === order) rememberJob(alias, order, activeJob.job_id);
+      result = await waitForBackgroundJob(alias, order, activeJob, progress);
+    } else {
+      let response;
+      try {
+        response = await submit();
+      } catch (error) {
+        // 提交响应丢失时只查询已受理任务，不重新发送执行请求。
+        if (!isAxiosError(error) || (error.response && error.response.status < 500)) throw error;
+        try { activeJob = await getActiveBackgroundJob<T>(alias); } catch { /* 保留状态未确认 */ }
+        if (!activeJob) throw new TaskStatusUnknown('提交响应中断，暂时无法确认是否已受理。请先查看账号运行状态和最新结果，避免重复执行。');
+      }
+      if (!activeJob && response!.status === 202) activeJob = response!.data as BackgroundJobResponse<T>;
+      if (activeJob) {
+        if (activeJob.order === order) rememberJob(alias, order, activeJob.job_id);
+        result = await waitForBackgroundJob(alias, order, activeJob, progress);
+      } else result = response!.data as T;
+    }
+    rememberJob(alias, order);
+    const status = resultStatus(result);
+    updateTask(id, {
+      status, finishedAt: Date.now(),
+      summary: status === 'error' ? '任务结束，部分步骤出错，展开查看原因'
+        : status === 'warning' ? '任务结束，含警告或中止，展开查看说明' : '执行完成',
+    });
+    return result;
+  } catch (error) {
+    const unknown = error instanceof TaskStatusUnknown;
+    updateTask(id, {
+      status: unknown ? 'unknown' : 'error', finishedAt: Date.now(),
+      summary: isAxiosError(error) ? getErrorMessage(error) : error instanceof Error ? error.message : '任务执行失败',
+    });
+    throw error;
+  }
 }
 
 const accountConfigCacheKey = (alias: string, area: string) => `${alias}\u0000${area}`;
@@ -262,40 +356,18 @@ export async function putAccountConfigs(alias: string, configs: Record<string, C
 }
 
 export async function postAccountAreaDaily(alias: string, onProgress?: (progress: string) => void) {
-  const activeJob = await getActiveBackgroundJob<AccountInfo>(alias);
-  if (activeJob) {
-    return waitForBackgroundJob(alias, "daily", activeJob, onProgress);
-  }
-
-  const response = await API.post<AccountInfo | BackgroundJobResponse<AccountInfo>>(`/account/${alias}/do_daily`, {}, {
-    timeout: 30 * 1000,
-  });
-  if (response.status !== 202) {
-    return response.data as AccountInfo;
-  }
-  return waitForBackgroundJob(alias, "daily", response.data as BackgroundJobResponse<AccountInfo>, onProgress);
+  return runAccountTask<AccountInfo>(alias, 'daily', '清日常', () =>
+    API.post(`/account/${encodeURIComponent(alias)}/do_daily`, {}, { skipErrorHandler: true }), onProgress);
 }
 
 export async function postAccountAreaSingle(
   alias: string,
   module: string,
   onProgress?: (progress: string) => void,
+  title = module,
 ) {
-  const activeJob = await getActiveBackgroundJob<ResultInfo[]>(alias);
-  if (activeJob) {
-    return waitForBackgroundJob(alias, module, activeJob, onProgress);
-  }
-
-  const response = await API.post<ResultInfo[] | BackgroundJobResponse<ResultInfo[]>>(`/account/${alias}/do_single`, {
-    order: module
-  }, {
-    timeout: 30 * 1000,
-  });
-  if (response.status !== 202) {
-    return response.data as ResultInfo[];
-  }
-
-  return waitForBackgroundJob(alias, module, response.data as BackgroundJobResponse<ResultInfo[]>, onProgress);
+  return runAccountTask<ResultInfo[]>(alias, module, title, () =>
+    API.post(`/account/${encodeURIComponent(alias)}/do_single`, { order: module }, { skipErrorHandler: true }), onProgress);
 }
 
 export async function getAccountDailyResultList(alias: string) {

@@ -353,19 +353,16 @@ export function DashBoard() {
         stillFree.forEach((name) => {
             setAccountBusy(name, true);
         });
-        let ok = 0;
-        let fail = 0;
         const outcomes = new Map<string, { ok: boolean; detail: string; res?: ResultInfo[] }>();
         // 多账号同时执行同一动作：全并发（每账号一个独立请求，语义即"一起跑"；用户裁决不改）
         await Promise.all(
             stillFree.map(async (name) => {
                 try {
-                    const res = await postAccountAreaSingle(name, btn.key);
-                    outcomes.set(name, { ok: true, detail: '', res });
-                    ok += 1;
+                    const res = await postAccountAreaSingle(name, btn.key, undefined, btn.name);
+                    const status = res[0]?.status || '跳过';
+                    outcomes.set(name, { ok: status === '成功' || status === '跳过', detail: status, res });
                 } catch (err: any) {
                     outcomes.set(name, { ok: false, detail: await getErrorDescription(err), res: undefined });
-                    fail += 1;
                 } finally {
                     setAccountBusy(name, false);
                 }
@@ -378,18 +375,11 @@ export function DashBoard() {
         if (popupResult && !singleDetail) {
             const rows: ResultSummaryRow[] = stillFree.map((name) => {
                 const o = outcomes.get(name);
-                return { alias: name, name: getDisplayName(name), status: o?.ok ? '成功' : '失败', detail: o?.ok ? undefined : o?.detail };
+                return { alias: name, name: getDisplayName(name), status: o?.res?.[0]?.status || (o?.ok ? '成功' : '待确认'), detail: o?.ok ? undefined : o?.detail };
             });
             NiceModal.show(ResultSummaryModal, { title: `${btn.name} · ${targetDesc}`, rows }).catch(() => {});
         }
-        // 没开弹结果时才用 toast 反馈（弹窗本身就是反馈，不叠 toast）
-        if (!popupResult) {
-            toaster.create({
-                type: fail > 0 ? 'warning' : 'success',
-                title: `${btn.name} 执行完毕`,
-                description: fail > 0 ? `成功 ${ok} / 失败 ${fail}，请在各账号详情的功能区里查看结果` : '请在各账号详情的功能区里查看结果',
-            });
-        }
+        // 未开启自动弹结果时，在统一任务面板查看汇总和日志。
         // 仅对单账号执行且该账号开了"弹结果"标记的，直接弹该账号的功能结果窗
         if (singleDetail) {
             const o = outcomes.get(stillFree[0]);

@@ -101,36 +101,12 @@ export function AccountInfo({
         }
         buttonLoading.onOpen();
         onBusyRef.current?.(alias, true); // 本地动作登记真源：批量/同步/详情页全经 busyAccountsRef 互斥
-        const nameForUi = displayNameRef.current || alias;
-        toaster.create({ type: 'info', title: `开始为${nameForUi}清理日常...` });
         try {
-            let lastProgressLine = '';
-            const res = await postAccountAreaDaily(alias, (progress) => {
-                const progressLines = progress.split('\n').filter(Boolean);
-                const currentLine = progressLines[progressLines.length - 1] || '';
-                if (!currentLine || currentLine === lastProgressLine) return;
-                lastProgressLine = currentLine;
-                toaster.create({ type: 'info', title: `${nameForUi}清日常进度`, description: currentLine, duration: 5000 });
-            });
+            const res = await postAccountAreaDaily(alias);
             updateAccountInfo(res);
             void emitDailyFinished(alias);
-
-            const st = res?.daily_clean_time?.status || '';
-            if (st === '错误') {
-                toaster.create({ type: 'error', title: `${nameForUi}清日常结束`, description: st });
-            } else if (st === '警告' || st === '中止') {
-                toaster.create({ type: 'warning', title: `${nameForUi}清日常完成(${st})`, description: st });
-            } else if (st === '成功' || st === '跳过') {
-                toaster.create({ type: 'success', title: `${nameForUi}清日常成功` });
-            } else {
-                toaster.create({ type: 'success', title: `${nameForUi}清日常完成`, description: st || undefined });
-            }
-        } catch (err: any) {
-            toaster.create({
-                type: 'error',
-                title: `${nameForUi}清日常失败`,
-                description: await getErrorDescription(err),
-            });
+        } catch {
+            // 执行进度和失败原因由统一任务面板展示。
         } finally {
             buttonLoading.onClose();
             onBusyRef.current?.(alias, false);

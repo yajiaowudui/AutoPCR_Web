@@ -10,7 +10,6 @@ import Info from '@components/Account/Info';
 import { createFileRoute } from '@tanstack/react-router';
 import { getAccount, getAccountDailyResultList, postAccountAreaDaily } from '@api/Account';
 import { POPUP_FLAG_KEY, loadPopupFlag, emitDailyFinished, textFitPadding, safeSetItem, getDisplayName, busyAccountsRef, patchBusy } from '@components/Account/accountShared';
-import { getErrorDescription } from '@components/Account/Config';
 import { toaster } from '../../../../components/ui/toaster';
 import { Checkbox } from '../../../../components/ui/checkbox';
 import ResultInfoModal from '@components/Account/ResultInfoModal';
@@ -144,29 +143,14 @@ function AccountComponent() {
         setCleanLoading(true);
         setCleanStatus('');
         patchBusy(a, true);
-        toaster.create({ type: 'info', title: `开始为${nameForUi}清理日常...` });
 
         try {
-            let lastProgressLine = '';
-            const res = await postAccountAreaDaily(a, (progress) => {
-                const progressLines = progress.split('\n').filter(Boolean);
-                const currentLine = progressLines[progressLines.length - 1] || '';
-                if (!currentLine || currentLine === lastProgressLine) return;
-                lastProgressLine = currentLine;
-                toaster.create({ type: 'info', title: `${nameForUi}清日常进度`, description: currentLine, duration: 5000 });
-            });
+            const res = await postAccountAreaDaily(a);
             void emitDailyFinished(a);
             // 以下三个都是「操作结果告知/全局标记」：与用户切到哪无关，不因切号丢失（与失败 toast 口径对称）
             sessionStorage.setItem('autopcr_need_refresh_dashboard', '1');
             const resAny = res as { daily_clean_time?: { status?: string } | null; status?: string } | undefined;
             const st = resAny?.daily_clean_time?.status || resAny?.status || '';
-            if (st === '错误') {
-                toaster.create({ type: 'error', title: `${nameForUi}清日常结束` });
-            } else if (st === '警告' || st === '中止') {
-                toaster.create({ type: 'warning', title: `${nameForUi}清日常完成(${st})` });
-            } else {
-                toaster.create({ type: 'success', title: `${nameForUi}清日常成功` });
-            }
             if (accountRef.current !== a) return; // 换号了：晚到结果不写新页面（loading 由重置 effect 兜底）
 
             setCleanStatus(st);
@@ -185,13 +169,9 @@ function AccountComponent() {
                         toaster.create({ type: 'warning', title: '结果获取失败', description: '无法拉取本次日常结果' });
                     });
             }
-        } catch (err: any) {
-            if (accountRef.current === a) setCleanStatus('错误');
-            toaster.create({
-                type: 'error',
-                title: `${nameForUi}清日常失败`,
-                description: await getErrorDescription(err),
-            });
+        } catch {
+            if (accountRef.current === a) setCleanStatus('待确认');
+            // 执行进度和失败原因由统一任务面板展示。
         } finally {
             // 换号后 loading 交给重置 effect，这里不再碰（晚到 finally 会把 B 页的按钮状态搅乱）
             if (accountRef.current === a) setCleanLoading(false);

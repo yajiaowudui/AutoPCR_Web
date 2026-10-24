@@ -36,7 +36,7 @@ export const Fetch = axios.create({
 /**
  * 解析错误信息
  */
-const getErrorMessage = (error: AxiosError): string => {
+export const getErrorMessage = (error: AxiosError): string => {
     if (error.response) {
         if (error.response.status === 429) {
             const retryAfter = Number(error.response.headers['retry-after']);
@@ -47,6 +47,8 @@ const getErrorMessage = (error: AxiosError): string => {
         // 如果后端返回的是字符串，直接使用；如果是对象，尝试获取 message 或 error 字段
         if (typeof data === 'string') return data;
         return data?.message || data?.error || `请求失败 (${error.response.status})`;
+    } else if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+        return '请求超时，暂时无法确认执行结果';
     } else if (error.request) {
         return '服务器无响应，请检测您的网络连接';
     } else {

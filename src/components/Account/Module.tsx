@@ -167,24 +167,15 @@ export default function Module({ alias, areaKey, areaName, config, info, isOpen,
             return;
         }
         patchBusy(alias, true);
-        toaster.create({ type: 'info', title: '开始执行' + info?.name + "..." });
         onOpen();
-        let lastProgressLine = '';
-        postAccountAreaSingle(alias, info?.key, (progress) => {
-            const progressLines = progress.split('\n').filter(Boolean);
-            const currentLine = progressLines[progressLines.length - 1] || '';
-            if (!currentLine || currentLine === lastProgressLine) return;
-            lastProgressLine = currentLine;
-            toaster.create({ type: 'info', title: `${info?.name}执行进度`, description: currentLine, duration: 5000 });
-        }).then(async (res) => {
-            toaster.create({ type: 'success', title: '执行成功' });
+        postAccountAreaSingle(alias, info?.key, undefined, info.name).then(async (res) => {
             // 先解除 loading 再弹结果：无论结果窗怎么关，按钮圈都会正常结束
             onClose();
             if (loadPopupFlag(alias)) {
-                await NiceModal.show(ResultInfoModal, { alias: alias, title: info?.name, resultInfo: res });
+                void NiceModal.show(ResultInfoModal, { alias: alias, title: info?.name, resultInfo: res }).catch(() => {});
             }
-        }).catch(async (err: AxiosError) => {
-            toaster.create({ type: 'error', title: '执行失败', description: await getErrorDescription(err) });
+        }).catch(() => {
+            // 执行进度和失败原因由统一任务面板展示。
         }).finally(() => {
             onClose();
             patchBusy(alias, false); // 本笔是唯一登记作者（入口已互斥），直接清
