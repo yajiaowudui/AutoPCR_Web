@@ -11,7 +11,7 @@ import {
 } from '@chakra-ui/react';
 import NiceModal from '@ebay/nice-modal-react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { putAccountConfig } from '@/api/Account';
+import { getAccountTopRankUnits, putAccountConfig, putAccountConfigs } from '@/api/Account';
 import { ConfigInfo, ConfigValue } from '@/interfaces/Module';
 import { Checkbox } from '../../components/ui/checkbox';
 import { InputGroup } from '../../components/ui/input-group';
@@ -25,6 +25,8 @@ interface ConfigProps {
     alias: string;
     value: ConfigValue;
     info: ConfigInfo;
+    config?: Record<string, ConfigValue>;
+    disabled?: boolean;
     /** 回写父级 Area；折叠卸载后再展开必须靠它 */
     onConfigUpdate?: (key: string, value: ConfigValue) => void;
 }
@@ -59,6 +61,7 @@ function useConfigSaveFlow(
     key: string,
     propValue: ConfigValue,
     onConfigUpdate?: (key: string, value: ConfigValue) => void,
+    additionalConfig?: Record<string, ConfigValue>,
 ) {
     const mountedRef = useRef(true);
     const valueRef = useRef(propValue);
@@ -108,7 +111,9 @@ function useConfigSaveFlow(
         inflightRef.current = { payload, token };
         onUpdateRef.current?.(key, payload);
         try {
-            const res = await enqueueConfigSave(alias, () => putAccountConfig(alias, key, payload));
+            const res = await enqueueConfigSave(alias, () => additionalConfig
+                ? putAccountConfigs(alias, { ...additionalConfig, [key]: payload })
+                : putAccountConfig(alias, key, payload));
             // 推进守卫：父级当前值仍等于本笔 payload，或本笔在途期间无外部更新（纪元未变）。
             // 后者兜住「不同值连笔」：前笔成功时父级已被后笔乐观值改走，但服务器此刻=前笔 payload，
             // 不推进的话后笔失败会回滚到比服务器更旧的值（已弹过「保存成功」却显示旧值）；
@@ -151,9 +156,10 @@ function useConfigState<T>(
     key: string,
     propValue: T,
     onConfigUpdate?: (key: string, value: ConfigValue) => void,
+    additionalConfig?: Record<string, ConfigValue>,
 ) {
     const [state, setState] = useState<T>(propValue);
-    const { commit } = useConfigSaveFlow(alias, key, propValue as ConfigValue, onConfigUpdate);
+    const { commit } = useConfigSaveFlow(alias, key, propValue as ConfigValue, onConfigUpdate, additionalConfig);
 
     useEffect(() => {
         setState(propValue);
@@ -170,8 +176,11 @@ function useConfigState<T>(
 }
 
 
-function ConfigBool({ alias, value, info, onConfigUpdate }: ConfigProps) {
-    const [checked, , save] = useConfigState(alias, info.key, value as boolean, onConfigUpdate);
+function ConfigBool({ alias, value, info, config, onConfigUpdate }: ConfigProps) {
+    const selectionKey = info.key === 'last_normal_quest_auto_latest' ? 'last_normal_quests_sweep'
+        : info.key === 'last_hard_quest_auto_latest' ? 'last_hard_quests_sweep' : undefined;
+    const [checked, , save] = useConfigState(alias, info.key, value as boolean, onConfigUpdate,
+        selectionKey && config ? { [selectionKey]: config[selectionKey] } : undefined);
 
     return (
         <InputGroup
@@ -382,7 +391,7 @@ function ConfigSingle(props: ConfigProps) {
 }
 
 
-function ConfigMulti({ alias, value, info, onConfigUpdate }: ConfigProps) {
+function ConfigMulti({ alias, value, info, onConfigUpdate, disabled }: ConfigProps) {
     const initialStrArr = useMemo(
         () => ((value as (string | number)[] | undefined) ?? []).map(String),
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -430,6 +439,7 @@ function ConfigMulti({ alias, value, info, onConfigUpdate }: ConfigProps) {
                         <Checkbox
                             key={element.value as string | number}
                             value={String(element.value)}
+                            disabled={disabled}
                         >
                             {element.display}
                         </Checkbox>
@@ -548,6 +558,8 @@ function ConfigMultiSearch({ alias, value, info, onConfigUpdate }: ConfigProps) 
             const ret = (await NiceModal.show(multiSelectModal, {
                 candidates: info.candidates,
                 value: (localValue ?? []) as ConfigValue[],
+                smartSelect: info.key === 'lazy_sweep_consider_units'
+                    ? () => getAccountTopRankUnits(alias) : undefined,
             })) as ConfigValue;
             if (ret === undefined) return;
 
@@ -585,18 +597,23 @@ function ConfigMultiSearch({ alias, value, info, onConfigUpdate }: ConfigProps) 
     );
 }
 
-export default function Config({ alias, value, info, onConfigUpdate }: ConfigProps) {
+export default function Config({ alias, value, info, config, onConfigUpdate }: ConfigProps) {
     switch (info?.config_type) {
         case 'bool':
-            return <ConfigBool alias={alias} value={value} info={info} onConfigUpdate={onConfigUpdate} />;
+            return <ConfigBool alias={alias} value={value} info={info} config={config} onConfigUpdate={onConfigUpdate} />;
         case 'int':
             return <ConfigInt alias={alias} value={value} info={info} onConfigUpdate={onConfigUpdate} />;
         case 'single':
             return <ConfigSingle alias={alias} value={value} info={info} onConfigUpdate={onConfigUpdate} />;
         case 'single_search':
             return <ConfigSingleSearch alias={alias} value={value} info={info} onConfigUpdate={onConfigUpdate} />;
-        case 'multi':
-            return <ConfigMulti alias={alias} value={value} info={info} onConfigUpdate={onConfigUpdate} />;
+        case 'multi': {
+            const followKey = info.key === 'last_normal_quests_sweep' ? 'last_normal_quest_auto_latest'
+                : info.key === 'last_hard_quests_sweep' ? 'last_hard_quest_auto_latest' : undefined;
+            const following = followKey ? config?.[followKey] !== false : false;
+            return <ConfigMulti alias={alias} value={following ? info.candidates.map(candidate => candidate.value as string | number) : value}
+                info={info} disabled={following} onConfigUpdate={onConfigUpdate} />;
+        }
         case 'time':
             return <ConfigTime alias={alias} value={value} info={info} onConfigUpdate={onConfigUpdate} />;
         case 'text':

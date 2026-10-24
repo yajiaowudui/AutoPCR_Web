@@ -34,7 +34,7 @@ export default defineConfig(({ mode }) => {
       TanStackRouterVite(),
       splitVendorChunkPlugin(),
       visualizer({
-        open: true,
+        open: false,
       }),
       envCompatible({
         mountedPath: 'process.env',

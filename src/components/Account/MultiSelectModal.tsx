@@ -13,13 +13,16 @@ import NiceModal, { useModal } from '@ebay/nice-modal-react';
 import { useRef, useState } from 'react';
 
 import { IoClose } from 'react-icons/io5';
+import { toaster } from '../ui/toaster';
+import { getErrorDescription } from './accountShared';
 
 interface MultiSelectModalProps {
     candidates: Candidate[];
     value: ConfigValue[];
+    smartSelect?: () => Promise<ConfigValue[]>;
 }
 
-const multiSelectModal = NiceModal.create(({ candidates, value }: MultiSelectModalProps) => {
+const multiSelectModal = NiceModal.create(({ candidates, value, smartSelect }: MultiSelectModalProps) => {
     const modal = useModal();
 
     const initValue = Array.isArray(value) ? value : [];
@@ -28,10 +31,14 @@ const multiSelectModal = NiceModal.create(({ candidates, value }: MultiSelectMod
     const [searchAllText, setSearchAllText] = useState('');
     const [searchSelectedText, setSearchSelectedText] = useState('');
     const [draggedUnit, setDraggedUnit] = useState<ConfigValue | null>(null);
+    const [selecting, setSelecting] = useState(false);
+    const selectRequestRef = useRef(0);
 
     const lastVisibleRef = useRef(false);
 
     if (modal.visible && !lastVisibleRef.current) {
+        selectRequestRef.current += 1;
+        setSelecting(false);
         setSelectedUnits(initValue);
         setAvailableUnits(candidates.filter(u => !initValue.includes(u.value)));
         setSearchAllText('');
@@ -59,8 +66,37 @@ const multiSelectModal = NiceModal.create(({ candidates, value }: MultiSelectMod
     };
 
     const handleClose = () => {
+        selectRequestRef.current += 1;
+        setSelecting(false);
         modal.resolve(undefined);
         modal.hide();
+    };
+
+    const handleSmartSelect = async () => {
+        if (!smartSelect || selecting) return;
+        const requestId = ++selectRequestRef.current;
+        setSelecting(true);
+        try {
+            const ids = await smartSelect();
+            if (requestId !== selectRequestRef.current) return;
+            const allowed = new Set(candidates.map(candidate => candidate.value));
+            const selected = [...new Set(ids)].filter(id => allowed.has(id));
+            if (selected.length === 0) {
+                toaster.create({ type: 'error', title: '未找到当前账号可选的角色' });
+                return;
+            }
+            setSelectedUnits(selected);
+            setAvailableUnits(candidates.filter(candidate => !selected.includes(candidate.value)));
+            setSearchAllText('');
+            setSearchSelectedText('');
+            toaster.create({ type: 'success', title: `已智能选取${selected.length}名角色，点击保存生效` });
+        } catch (err) {
+            const description = await getErrorDescription(err);
+            if (requestId !== selectRequestRef.current) return;
+            toaster.create({ type: 'error', title: '智能选取失败', description });
+        } finally {
+            if (requestId === selectRequestRef.current) setSelecting(false);
+        }
     };
 
     const moveUnit = (fromIndex: number, toIndex: number) => {
@@ -118,7 +154,17 @@ const multiSelectModal = NiceModal.create(({ candidates, value }: MultiSelectMod
                 <ModalHeader>选择</ModalHeader>
                 <ModalCloseButton />
                 <ModalBody>
-                    <Flex gap={4}>
+                    {smartSelect && (
+                        <Box mb={3}>
+                            <Button size="sm" colorPalette="blue" loading={selecting} onClick={handleSmartSelect}>
+                                智能选取最高品级20人
+                            </Button>
+                            <Text fontSize="xs" color="fg.muted" mt={1}>
+                                按品级、等级、战力依次优先，替换当前选择；保存后生效。
+                            </Text>
+                        </Box>
+                    )}
+                    <Flex gap={4} pointerEvents={selecting ? 'none' : 'auto'} opacity={selecting ? 0.6 : 1}>
                         <Box flex={1}>
                             <Text mb={2}>未选择 ({availableUnits.length})</Text>
                             <Input placeholder="搜索" mb={2} value={searchAllText} onChange={(e) => setSearchAllText(e.target.value)} />
@@ -186,7 +232,7 @@ const multiSelectModal = NiceModal.create(({ candidates, value }: MultiSelectMod
                 </ModalBody>
 
                 <ModalFooter>
-                    <Button onClick={handleSave} colorPalette="blue" mr={3}>
+                    <Button onClick={handleSave} colorPalette="blue" mr={3} disabled={selecting}>
                         保存
                     </Button>
                     <Button variant="ghost" onClick={handleClose}>取消</Button>

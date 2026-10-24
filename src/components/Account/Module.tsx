@@ -386,6 +386,7 @@ export default function Module({ alias, areaKey, areaName, config, info, isOpen,
                                                     alias={alias}
                                                     value={config[key]}
                                                     info={info.config[key]}
+                                                    config={config}
                                                     onConfigUpdate={onConfigUpdate}
                                                 />
                                                 {key === 'ex_equip_rainbow_enchance_sub_status_4' && (

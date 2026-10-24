@@ -244,6 +244,13 @@ export async function getAccountConfig(alias: string, area: string) {
   return request;
 }
 
+export async function getAccountTopRankUnits(alias: string) {
+  const response = await API.get<number[]>(`/account/${encodeURIComponent(alias)}/unit_selection/top_rank`, {
+    timeout: 60 * 1000,
+  });
+  return response.data;
+}
+
 export async function putAccountConfig(alias: string, key: string, value: ConfigValue) {
   return putAccountConfigs(alias, {[key]: value})
 }
