@@ -29,6 +29,7 @@ interface ArenaEvent {
 interface ArenaFeed {
     subscriptions: Subscription[]
     events: ArenaEvent[]
+    notices?: { id: number; timestamp: number; text: string }[]
 }
 
 type QuoteRef = { kind: 'rank'; platform: number; id: number }
@@ -233,6 +234,11 @@ function ArenaPage() {
     }, [refresh])
 
     const messages = [
+        ...(feed?.notices ?? []).map(notice => ({
+            key: `notice:${notice.id}`, at: notice.timestamp * 1000,
+            own: false, sender: '竞技场提醒',
+            content: <Text whiteSpace="pre-wrap">{notice.text}</Text>,
+        })),
         ...(feed?.events ?? []).map(event => {
             const selected: ChatQuote = {
                 ref: { kind: 'rank', platform: event.platform, id: event.id },
@@ -311,14 +317,14 @@ function ArenaPage() {
     return (
         <Stack gap={3} width="full" maxW="4xl" mx="auto" py={2}>
             <Flex align="center" justify="space-between" gap={3}>
-                <Flex gap={3} align="center">
-                    <Circle size={10} bg="blue.solid" color="blue.contrast"><FiZap /></Circle>
-                    <Box>
+                <Flex gap={{ base: 2, md: 3 }} align="center" minW={0}>
+                    <Circle size={{ base: 8, md: 10 }} flexShrink={0} bg="blue.solid" color="blue.contrast"><FiZap /></Circle>
+                    <Box minW={0}>
                         <Heading size="md">竞技场消息</Heading>
                         <Text fontSize="xs" color="fg.muted">订阅提醒与竞技场命令</Text>
                     </Box>
                 </Flex>
-                <Button variant="outline" size="sm" onClick={() => setRefresh(value => value + 1)}>刷新</Button>
+                <Button variant="outline" size="sm" flexShrink={0} onClick={() => setRefresh(value => value + 1)}>刷新</Button>
             </Flex>
             {feed && (
                 <Box as="details" fontSize="sm" px={2}>
@@ -384,10 +390,10 @@ function ArenaPage() {
                         event.preventDefault()
                         void runCommand()
                     }}>
-                        <Input ref={inputRef} aria-label="竞技场命令" maxLength={300}
+                        <Input ref={inputRef} minW={0} aria-label="竞技场命令" maxLength={300}
                             placeholder={quote ? '输入引用回复' : '输入竞技场命令，例如 #pjjc记录'}
                             value={command} disabled={sending} onChange={event => setCommand(event.target.value)} />
-                        <Button type="submit" colorPalette="blue" loading={sending} disabled={!command.trim()}>
+                        <Button type="submit" flexShrink={0} colorPalette="blue" loading={sending} disabled={!command.trim()}>
                             <FiSend /> 发送
                         </Button>
                     </Flex>
@@ -399,6 +405,11 @@ function ArenaPage() {
                             <Text>例如「#jjc记录 小号」「#pjjc透视 小号 flush」「#jjc回刺 小号 19 2」「#pjjc换防 小号」。昵称可换成「批量」或「所有」，省略时使用默认账号。</Text>
                             <Text>「#pjjc侦察 小号 22 0」优先使用阵容缓存，缓存不足时可能消耗挑战次数，默认侦察第 1 名。「#pjjc猜拳 小号 22」按排名调整进攻编队，0 表示随机错排，-1 表示最近一条对战记录。</Text>
                             <Text>回刺和 PJJC 猜拳开始执行时，会暂停对应账号的后台雷达和自动换防上号 10 分钟。</Text>
+                            <Text>订阅管理：「竞技场绑定 UID 昵称」「删除竞技场绑定 1」「竞技场修改昵称 1 新昵称」「清空竞技场绑定」。从网页新建的订阅默认在网页显示通知。</Text>
+                            <Text>上号保护：「#暂停上号 小号 60」「#恢复上号 批量」「#上号状态」。</Text>
+                            <Text>雷达与监控：「刷榜 1」「p突发 1 1 5 10」「p突发重置 1」「雷达频率 5 1」「雷达缓存 10 1」「雷达策略重置 全部 1」「p被打换防状态」「p被打检测间隔 60 1」「竞技场活跃度 11 1」「竞技场活跃度状态」。</Text>
+                            <Text>换防参数：「j掉名换防延时 30」「p掉名换防延时 15」「j雷达延时 30」「j补防次数 2」「j补防间隔 300」，末尾可加订阅序号。</Text>
+                            <Text>工具：「#竞技场次数 小号」「#jjc预查 小号」「#jjc本地库」「#pjjc本地库」「#热门防守保护」。</Text>
                         </Stack>
                     </Box>
                 </Stack>

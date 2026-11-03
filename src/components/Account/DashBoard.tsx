@@ -509,7 +509,8 @@ export function DashBoard() {
 
 
     return (
-        <Stack gap={4} minH="full" w="full" p={4} position="relative" zIndex={1}>
+        <Stack gap={{ base: 3, md: 4 }} minH="full" w="full" minW={0}
+            p={{ base: 1, md: 4 }} position="relative" zIndex={1}>
             <Card.Root variant="elevated" bg="bg.glass" backdropFilter="blur(12px)" shadow="sm" borderRadius="2xl" borderWidth="1px" borderColor="border.subtle">
                 <Card.Body py={2} px={4}>
                     <Flex justify="space-between" align="center" wrap="wrap" gap={2}>
@@ -523,7 +524,7 @@ export function DashBoard() {
                             )}
                         </Box>
 
-                        <HStack gap={2}>
+                        <Flex gap={2} wrap="wrap" minW={0}>
                             <Button size="xs" variant="surface" colorPalette="teal" onClick={showReadme}>
                                 <FiBook /> 使用须知
                             </Button>
@@ -533,7 +534,7 @@ export function DashBoard() {
                             <Button size="xs" variant="surface" colorPalette="red" onClick={deleteQQConfirm.onOpen}>
                                 <FiUserX /> 注销QQ
                             </Button>
-                        </HStack>
+                        </Flex>
                     </Flex>
                 </Card.Body>
             </Card.Root>
@@ -545,7 +546,8 @@ export function DashBoard() {
             <Flex
                 bg="bg.panel"
                 py={2}
-                px={3}
+                px={{ base: 2, md: 3 }}
+                minW={0}
                 borderRadius="xl"
                 shadow="sm"
                 borderWidth="1px"
@@ -554,8 +556,8 @@ export function DashBoard() {
                 wrap="wrap"
                 gap={2}
             >
-                <HStack gap={2} alignItems="center">
-                    <Box w="80px" flexShrink={0} fontSize="xs" color="fg.muted" lineHeight="1.5" display="flex" alignItems="center">
+                <Flex gap={2} align="center" wrap="wrap" flexBasis={{ base: '100%', lg: 'auto' }} minW={0}>
+                    <Box flexBasis={{ base: '100%', lg: '80px' }} flexShrink={0} fontSize="xs" color="fg.muted" lineHeight="1.5">
                         <Text whiteSpace="nowrap">
                             {selectedAccounts.length > 0
                                 ? '只执行勾选账号'
@@ -601,9 +603,10 @@ export function DashBoard() {
                     >
                         <FiLayers /> 批量运行
                     </Button>
-                </HStack>
+                </Flex>
 
-                <Flex flex={1} minW={0} wrap="wrap" alignContent="flex-start" justify="flex-start" alignItems="center" gap={2}>
+                <Flex flex={{ base: '0 0 100%', lg: '1 1 16rem' }} minW={0} wrap="wrap"
+                    alignContent="flex-start" justify="flex-start" alignItems="center" gap={2}>
                     <Button
                         size="sm"
                         flexShrink={0}
@@ -618,6 +621,12 @@ export function DashBoard() {
                         <Button
                             key={btn.key}
                             size="sm"
+                            maxW="full"
+                            minW={0}
+                            whiteSpace="normal"
+                            overflowWrap="anywhere"
+                            h="auto"
+                            minH={8}
                             px={textFitPadding(btn.name)}
                             colorPalette={btn.dangerous ? 'red' : 'blue'}
                             variant={btn.dangerous ? 'solid' : 'ghost'}
@@ -629,7 +638,7 @@ export function DashBoard() {
                             {btn.name}
                         </Button>
                     ))}
-                    <Box borderWidth="1px" borderColor="currentColor" borderRadius="md" px={2} h="2rem" display="flex" alignItems="center" flexShrink={0} ml="auto">
+                    <Box borderWidth="1px" borderColor="currentColor" borderRadius="md" px={2} h="2rem" display="flex" alignItems="center" flexShrink={0} ml={{ base: 0, lg: 'auto' }}>
                         <Checkbox
                             checked={popupResult}
                             onCheckedChange={(details) => setPopupResult(!!details.checked)}
@@ -640,11 +649,11 @@ export function DashBoard() {
                             弹结果
                         </Checkbox>
                     </Box>
-                    <Box w="1px" h="1.25rem" bg="border.subtle" flexShrink={0} alignSelf="center" />
+                    <Box display={{ base: 'none', lg: 'block' }} w="1px" h="1.25rem" bg="border.subtle" flexShrink={0} alignSelf="center" />
                         <ScheduleNotifySettings />
                 </Flex>
 
-                <HStack gap={2}>
+                <Flex gap={2} wrap="wrap" minW={0}>
                     <Box bg="bg.subtle" borderRadius="md" display="flex">
                         <Tooltip content="表格视图" openDelay={0} closeDelay={0}>
                             <IconButton
@@ -738,7 +747,7 @@ export function DashBoard() {
                             </Tooltip>
                         </Box>
                      </HStack>
-                </HStack>
+                </Flex>
             </Flex>
 
             {creatAccountSwitch.open && (

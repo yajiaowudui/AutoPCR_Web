@@ -3,7 +3,6 @@ import {
     Button,
     Flex,
     FlexProps,
-    HStack,
     Icon,
     Image,
     Text,
@@ -22,7 +21,6 @@ import { useColorMode } from '../ui/color-mode'
 import { IconType } from 'react-icons'
 import { Route as InfoRoute } from "@routes/daily/_sidebar/account/index";
 import { Route as LoginRoute } from "@routes/daily/login";
-import { Tooltip } from '../../components/ui/tooltip'
 import { Route as UsersRoute } from "@routes/daily/_sidebar/user/index";
 import { Route as ArenaRoute } from "@routes/daily/_sidebar/arena/index";
 import { ValidateResponse } from '@/interfaces/Account'
@@ -41,14 +39,14 @@ interface NavItemProps extends FlexProps {
 }
 
 const NavItem = ({ icon, children, href, onClick, ...rest }: NavItemProps) => {
-    const isSmallScreen = useBreakpointValue({ base: true, md: false });
-
     const content = (
         <Flex
             align="center"
-            py={2}
-            px={3}
-            borderRadius="0"
+            gap={{ base: 1, md: 2 }}
+            minH="44px"
+            px={{ base: 2, md: 3 }}
+            borderRadius="md"
+            whiteSpace="nowrap"
             role="group"
             cursor="pointer"
             transition="all 0.2s"
@@ -62,12 +60,12 @@ const NavItem = ({ icon, children, href, onClick, ...rest }: NavItemProps) => {
             {...rest}>
             {icon && (
                 <Icon
-                    mr={isSmallScreen ? "0" : "2"}
-                    fontSize="18"
+                    flexShrink={0}
+                    fontSize={{ base: '16px', md: '18px' }}
                     as={icon}
                 />
             )}
-            {!isSmallScreen && <Text fontSize="sm" fontWeight="medium">{children}</Text>}
+            <Text fontSize={{ base: 'xs', md: 'sm' }} fontWeight="medium">{children}</Text>
         </Flex>
     );
 
@@ -82,21 +80,14 @@ const NavItem = ({ icon, children, href, onClick, ...rest }: NavItemProps) => {
                         color: "var(--chakra-colors-sidebar-active-fg)",
                     } 
                 }}
-                style={{ textDecoration: 'none' }}
+                style={{ textDecoration: 'none', borderRadius: 'var(--chakra-radii-md)' }}
             >
-                {/* Need to override color for active state manually as activeProps style applies to the 'a' tag */}
-                 <Tooltip content={isSmallScreen ? children : undefined}>
-                    {content}
-                 </Tooltip>
+                {content}
             </Link>
         )
     }
 
-    return (
-        <Tooltip content={isSmallScreen ? children : undefined}>
-            {content}
-        </Tooltip>
-    )
+    return content
 }
 
 export default function Nav() {
@@ -136,15 +127,18 @@ export default function Nav() {
     }
 
     return (
-        <Flex flexDirection={'column'} height={'100vh'} bg="bg.canvas">
-            <Box top={0} left={0} right={0} zIndex={20} bg="transparent" px={4} py={0}>
-                <Flex h={14} alignItems={'center'} justifyContent={'space-between'}>
-                    <Box>
+        <Flex flexDirection="column" height="100dvh" bg="bg.canvas">
+            <Box zIndex={20} bg="transparent" px={{ base: 2, md: 4 }} flexShrink={0}>
+                <Flex minH={14} align="center" justify="space-between" wrap={{ base: 'wrap', md: 'nowrap' }}
+                    columnGap={{ base: 2, md: 4 }} py={{ base: 1, md: 0 }}>
+                    <Box order={0} flexShrink={0}>
                         <Link to={InfoRoute.to}>
-                            <Image src={autopcr} alt="autopcr" h="32px" w="auto" objectFit="contain" />
+                            <Image src={autopcr} alt="AutoPCR" h={{ base: '26px', md: '32px' }} w="auto" objectFit="contain" />
                         </Link>
                     </Box>
-                    <HStack as={'nav'} gap={isSmallScreen ? 1 : 4}>
+                    <Flex as="nav" aria-label="主导航" order={{ base: 2, md: 1 }} gap={{ base: 1, md: 2 }}
+                        flexBasis={{ base: '100%', md: 'auto' }} wrap={{ base: 'wrap', md: 'nowrap' }}
+                        borderTopWidth={{ base: '1px', md: '0' }} borderColor="border.subtle">
                         <NavItem key="dashboard" href={InfoRoute.to} icon={FiHome} >
                             一览
                         </NavItem>
@@ -157,11 +151,11 @@ export default function Nav() {
                         <NavItem key="logout" icon={FiCompass} onClick={handleLogout}>
                             登出
                         </NavItem>
-                    </HStack>
-                    <Flex alignItems={'center'} gap={2}>
+                    </Flex>
+                    <Flex order={{ base: 1, md: 2 }} align="center" gap={{ base: 1, md: 2 }} flexShrink={0}>
                         <RunningStatus />
                         <Button
-                            aria-label="Toggle color mode"
+                            aria-label="切换配色"
                             onClick={toggleColorMode}
                             size={isSmallScreen ? "sm" : "md"}
                             px={0}
@@ -174,7 +168,7 @@ export default function Nav() {
                 </Flex>
             </Box>
 
-            <Flex p={4} flex={1} overflow={'auto'} flexDirection={'column'} zIndex={1}>
+            <Flex p={{ base: 2, md: 4 }} flex={1} minH={0} minW={0} overflow="auto" flexDirection="column" zIndex={1}>
                 <ScheduleNotifyWatcher />
                 <Outlet />
             </Flex>
