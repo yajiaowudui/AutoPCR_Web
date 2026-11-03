@@ -1,10 +1,9 @@
 import { Alert, Badge, Box, Button, Circle, Flex, Heading, Input, Stack, Text } from '@chakra-ui/react'
 import { createFileRoute } from '@tanstack/react-router'
 import { isAxiosError } from 'axios'
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { FiCornerUpLeft, FiSend, FiUser, FiX, FiZap } from 'react-icons/fi'
 import { API, getErrorMessage } from '@api/APIUtils'
-import { BackgroundJobResponse, waitForBackgroundJob } from '@api/Account'
 import { ResultInfo as ResultList } from '@components/Account/ResultInfo'
 import { ResultInfo } from '@interfaces/UserInfo'
 
@@ -19,6 +18,7 @@ interface Subscription {
 interface ArenaEvent {
     id: number
     platform: number
+    uid: string
     name: string
     timestamp: number
     mode: 'JJC' | 'PJJC'
@@ -31,12 +31,8 @@ interface ArenaFeed {
     events: ArenaEvent[]
 }
 
-interface ArenaJob {
-    alias: string
-    job: BackgroundJobResponse<ResultInfo[]>
-}
-
-type QuoteRef = { kind: 'rank'; platform: number; id: number } | { kind: 'result'; job_id: string }
+type QuoteRef = { kind: 'rank'; platform: number; id: number }
+    | { kind: 'result'; alias: string; order: string; key: string }
 
 interface ChatQuote {
     ref: QuoteRef
@@ -46,14 +42,22 @@ interface ChatQuote {
 interface AccountReply {
     message: string
     results: ResultInfo[]
+    details?: string
     quote?: ChatQuote
 }
 
 interface ChatTurn {
+    id: number
     command: string
     sentAt: number
-    quote?: ChatQuote
+    quote?: Pick<ChatQuote, 'label'>
+    progress?: string
     response?: { at: number; text: string; accounts?: AccountReply[] }
+}
+
+interface ChatHistory {
+    turns: ChatTurn[]
+    nextBefore: number | null
 }
 
 const platforms = ['B 服', '渠道服', '台服', '台服（其他）']
@@ -62,7 +66,7 @@ const chatTime = new Intl.DateTimeFormat('zh-CN', {
 })
 
 function rankMessage(event: ArenaEvent) {
-    return `${event.name} · ${event.mode} · 第 ${event.before} 名 → 第 ${event.after} 名`
+    return `${event.name || event.uid} · ${event.mode} · 第 ${event.before} 名 → 第 ${event.after} 名`
 }
 
 function isArenaFeed(data: unknown): data is ArenaFeed {
@@ -77,17 +81,29 @@ function ArenaPage() {
     const [refresh, setRefresh] = useState(0)
     const [command, setCommand] = useState('')
     const [sending, setSending] = useState(false)
-    const [progress, setProgress] = useState('')
     const [turns, setTurns] = useState<ChatTurn[]>([])
+    const [before, setBefore] = useState<number | null>(null)
+    const [loadingOlder, setLoadingOlder] = useState(false)
+    const [historyError, setHistoryError] = useState('')
+    const [commandError, setCommandError] = useState('')
     const [quote, setQuote] = useState<ChatQuote>()
     const inputRef = useRef<HTMLInputElement>(null)
     const timelineRef = useRef<HTMLDivElement>(null)
     const followLatest = useRef(true)
+    const historyLoaded = useRef(false)
+    const olderScroll = useRef<{ top: number; height: number } | null>(null)
 
     useLayoutEffect(() => {
         const timeline = timelineRef.current
-        if (timeline && followLatest.current) timeline.scrollTop = timeline.scrollHeight
-    }, [feed, turns, progress])
+        if (!timeline) return
+        const older = olderScroll.current
+        if (older) {
+            timeline.scrollTop = older.top + timeline.scrollHeight - older.height
+            olderScroll.current = null
+        } else if (followLatest.current) {
+            timeline.scrollTop = timeline.scrollHeight
+        }
+    }, [feed, turns])
 
     function selectQuote(selected: ChatQuote, action: string) {
         setQuote(selected)
@@ -95,68 +111,90 @@ function ArenaPage() {
         inputRef.current?.focus()
     }
 
+    const mergeHistory = useCallback((incoming: ChatTurn[]) => {
+        setTurns(previous => {
+            const byId = new Map(previous.map(turn => [turn.id, turn]))
+            incoming.forEach(turn => {
+                const existing = byId.get(turn.id)
+                if (!existing?.response || turn.response) byId.set(turn.id, turn)
+            })
+            return Array.from(byId.values())
+        })
+    }, [])
+
+    async function loadOlder() {
+        if (before === null || loadingOlder) return
+        setLoadingOlder(true)
+        try {
+            const { data } = await API.get<ChatHistory>('/arena/history', {
+                params: { before }, skipErrorHandler: true,
+            })
+            if (!Array.isArray(data?.turns)) throw new Error('服务器未返回命令历史')
+            if (timelineRef.current) {
+                olderScroll.current = { top: timelineRef.current.scrollTop, height: timelineRef.current.scrollHeight }
+            }
+            mergeHistory(data.turns)
+            setBefore(data.nextBefore)
+        } catch {
+            setHistoryError('暂时无法读取更早的命令，请重试。')
+        } finally {
+            setLoadingOlder(false)
+        }
+    }
+
     async function runCommand() {
         const input = command.trim()
         if (!input || sending) return
-        const sentAt = Date.now()
         followLatest.current = true
         setSending(true)
-        setTurns(previous => [...previous, { command: input, sentAt, quote }].slice(-20))
-        const finish = (text: string, accounts?: AccountReply[]) => {
-            const response = { at: Date.now(), text, accounts }
-            setTurns(previous => previous.map(turn => turn.sentAt === sentAt ? { ...turn, response } : turn))
-        }
+        setCommandError('')
         try {
-            const { data } = await API.post<
-                { reply: string } | ArenaJob | { jobs: ArenaJob[] }
-            >('/arena/commands', { command: input, quote: quote?.ref }, { skipErrorHandler: true })
-            if (typeof data !== 'object' || data === null
-                || (!('job' in data) && !('jobs' in data) && typeof data.reply !== 'string')) {
-                finish('服务器未返回竞技场命令结果，请检查后端版本。')
-                return
-            }
+            await API.post('/arena/commands', {
+                command: input, quote: quote?.ref, quoteLabel: quote?.label,
+            }, { skipErrorHandler: true })
             setCommand('')
             setQuote(undefined)
-            if ('job' in data || 'jobs' in data) {
-                const jobs = 'jobs' in data ? data.jobs : [data]
-                const messages = new Map(jobs.map(({ alias }) => [alias, '任务已提交']))
-                const updateProgress = (alias: string, message: string) => {
-                    messages.set(alias, message)
-                    setProgress(Array.from(messages, ([name, status]) => `${name} · ${status}`).join('\n'))
-                }
-                const outcomes = await Promise.all(jobs.map(async ({ alias, job }) => {
-                    updateProgress(alias, '任务已提交')
-                    try {
-                        const results = await waitForBackgroundJob(alias, job.order, job, message => updateProgress(alias, message))
-                        const message = results.length ? '任务已结束，展开查看结果。' : '任务已结束，未生成可查看的结果。'
-                        updateProgress(alias, message)
-                        const latest = results[0]
-                        const isBack = job.order === 'jjc_back' || job.order === 'pjjc_back'
-                        const resultQuote: ChatQuote | undefined = latest && isBack && ['成功', '警告', '中止'].includes(latest.status)
-                            ? {
-                                ref: { kind: 'result', job_id: job.job_id },
-                                label: `${alias} · ${job.order === 'jjc_back' ? 'JJC' : 'PJJC'} 回刺结果`,
-                            }
-                            : undefined
-                        return { message: `${alias} · ${message}`, results: results.slice(0, 1), quote: resultQuote }
-                    } catch (error) {
-                        const message = error instanceof Error ? error.message : '无法读取任务结果，请先检查账号任务状态。'
-                        updateProgress(alias, message)
-                        return { message: `${alias} · ${message}`, results: [] }
-                    }
-                }))
-                finish('', outcomes)
-            } else {
-                finish(data.reply)
-            }
-            setRefresh(value => value + 1)
         } catch (error) {
-            finish(isAxiosError(error) ? getErrorMessage(error) : '命令未能完成，请检查账号任务状态。')
+            setCommandError(isAxiosError(error) ? getErrorMessage(error) : '命令未能完成，请检查账号任务状态。')
         } finally {
+            setRefresh(value => value + 1)
             setSending(false)
-            setProgress('')
         }
     }
+
+    useEffect(() => {
+        const controller = new AbortController()
+        let loading = false
+        async function load() {
+            if (loading || document.hidden) return
+            loading = true
+            try {
+                const { data } = await API.get<ChatHistory>('/arena/history', {
+                    signal: controller.signal, skipErrorHandler: true,
+                })
+                if (controller.signal.aborted) return
+                if (!Array.isArray(data?.turns)) throw new Error('服务器未返回命令历史')
+                mergeHistory(data.turns)
+                if (!historyLoaded.current) {
+                    historyLoaded.current = true
+                    setBefore(data.nextBefore)
+                }
+                setHistoryError('')
+            } catch {
+                if (!controller.signal.aborted) setHistoryError('暂时无法读取命令历史，请刷新重试。')
+            } finally {
+                loading = false
+            }
+        }
+        void load()
+        const timer = window.setInterval(load, 5000)
+        document.addEventListener('visibilitychange', load)
+        return () => {
+            controller.abort()
+            window.clearInterval(timer)
+            document.removeEventListener('visibilitychange', load)
+        }
+    }, [refresh, mergeHistory])
 
     useEffect(() => {
         const controller = new AbortController()
@@ -209,27 +247,26 @@ function ArenaPage() {
                     <Stack gap={2}>
                         <Flex gap={2} align="center" wrap="wrap">
                             <Badge colorPalette={event.mode === 'JJC' ? 'blue' : 'purple'}>{event.mode}</Badge>
-                            <Text fontWeight="semibold">{event.name}</Text>
+                            <Text fontWeight="semibold">{event.name || event.uid}</Text>
                             <Text fontSize="xs" color="fg.muted">{platforms[event.platform] ?? '其他服务器'}</Text>
                         </Flex>
-                        <Text>第 {event.before} 名 → 第 {event.after} 名</Text>
-                        {event.after > event.before && (
-                            <Flex gap={1} wrap="wrap">
-                                {['回刺', '换防', '透视'].map(action => (
-                                    <Button key={action} size="xs" variant="ghost" colorPalette="blue" disabled={sending}
-                                        onClick={() => selectQuote(selected, action)}>
-                                        {action === '回刺' && <FiCornerUpLeft />}{action}
-                                    </Button>
-                                ))}
-                            </Flex>
-                        )}
+                        <Text>{event.after > event.before ? '掉排名' : '排名变化'} · 第 {event.before} 名 → 第 {event.after} 名</Text>
+                        <Flex gap={1} wrap="wrap">
+                            {(event.after > event.before ? ['回刺', '换防', '透视', '记录'] : ['记录']).map(action => (
+                                <Button key={action} size="xs" variant={action === '回刺' ? 'subtle' : 'ghost'}
+                                    colorPalette="blue" disabled={sending}
+                                    onClick={() => selectQuote(selected, action)}>
+                                    {action === '回刺' && <FiCornerUpLeft />}{action}
+                                </Button>
+                            ))}
+                        </Flex>
                     </Stack>
                 ),
             }
         }),
         ...turns.flatMap(turn => {
             const sent = {
-                key: `sent:${turn.sentAt}`, at: turn.sentAt, own: true, sender: '我',
+                key: `sent:${turn.id}`, at: turn.sentAt, own: true, sender: '我',
                 content: (
                     <Stack gap={1}>
                         {turn.quote && <QuotePreview label={turn.quote.label} />}
@@ -237,16 +274,25 @@ function ArenaPage() {
                     </Stack>
                 ),
             }
-            if (!turn.response) return [sent]
+            if (!turn.response) return [sent, {
+                key: `pending:${turn.id}`, at: turn.sentAt, own: false, sender: '竞技场助手',
+                content: <Text whiteSpace="pre-wrap" role="status">{turn.progress || '正在处理命令…'}</Text>,
+            }]
             const { at, text, accounts } = turn.response
             return [sent, {
-                key: `reply:${turn.sentAt}`, at, own: false, sender: '竞技场助手',
+                key: `reply:${turn.id}`, at, own: false, sender: '竞技场助手',
                 content: (
                     <Stack gap={2}>
                         {text && <Text whiteSpace="pre-wrap">{text}</Text>}
                         {accounts?.map((account, index) => (
                             <Box key={index}>
                                 <Text>{account.message}</Text>
+                                {account.details && (
+                                    <Box as="details" mt={1} fontSize="sm">
+                                        <Box as="summary" cursor="pointer">查看任务日志</Box>
+                                        <Text mt={1} whiteSpace="pre-wrap">{account.details}</Text>
+                                    </Box>
+                                )}
                                 {account.results.length > 0 && <ResultList resultInfo={account.results} />}
                                 {account.quote && (
                                     <Button size="xs" variant="ghost" colorPalette="blue" disabled={sending}
@@ -295,6 +341,11 @@ function ArenaPage() {
                 </Alert.Root>
             )}
             <Stack gap={0} borderWidth="1px" rounded="xl" overflow="hidden">
+                {historyError && <Text px={3} py={2} color="red.fg" fontSize="sm" role="alert">{historyError}</Text>}
+                {before !== null && (
+                    <Button size="xs" variant="ghost" alignSelf="center" my={1} loading={loadingOlder}
+                        onClick={() => void loadOlder()}>加载更早的命令</Button>
+                )}
                 <Stack ref={timelineRef} role="log" aria-label="竞技场聊天记录" tabIndex={0}
                     bg="bg.subtle" gap={4} p={{ base: 3, md: 5 }} height="clamp(19rem, 62dvh, 48rem)"
                     overflowY="auto" onScroll={event => {
@@ -311,16 +362,18 @@ function ArenaPage() {
                             {message.content}
                         </ChatBubble>
                     ))}
-                    {sending && (
-                        <ChatBubble sender="竞技场助手">
-                            <Text whiteSpace="pre-wrap" role="status">{progress || '正在处理命令…'}</Text>
-                        </ChatBubble>
-                    )}
                 </Stack>
                 <Stack gap={2} p={3} borderTopWidth="1px" bg="bg">
                     {quote && (
                         <Flex align="center" gap={2} bg="bg.subtle" rounded="md" p={2}>
-                            <Box flex={1} minW={0}><QuotePreview label={quote.label} /></Box>
+                            <Box flex={1} minW={0}>
+                                <QuotePreview label={quote.label} />
+                                {quote.ref.kind === 'rank' && /^#?回刺(?:\s|$)/.test(command.trim()) && (
+                                    <Text fontSize="xs" color="fg.muted" mt={1}>
+                                        发送后会按这条通知的场次和掉名前排名回刺。可输入「回刺 2」指定第 2 套进攻阵容。
+                                    </Text>
+                                )}
+                            </Box>
                             <Button aria-label="取消引用" size="xs" variant="ghost" disabled={sending}
                                 onClick={() => { setQuote(undefined); inputRef.current?.focus() }}>
                                 <FiX />
@@ -338,12 +391,14 @@ function ArenaPage() {
                             <FiSend /> 发送
                         </Button>
                     </Flex>
+                    {commandError && <Text color="red.fg" fontSize="sm" role="alert">{commandError}</Text>}
                     <Box as="details" fontSize="xs" color="fg.muted">
                         <Box as="summary" cursor="pointer">命令帮助</Box>
                         <Stack gap={1} pt={2}>
                             <Text>「jjccx [UID]」查询排名。「竞技场订阅状态」「竞技场提醒 1100 1」「竞技场换防 00000 1」管理订阅。渠道服和台服可加「渠」或「台」前缀，序号 0 表示该服的全部订阅。</Text>
                             <Text>例如「#jjc记录 小号」「#pjjc透视 小号 flush」「#jjc回刺 小号 19 2」「#pjjc换防 小号」。昵称可换成「批量」或「所有」，省略时使用默认账号。</Text>
                             <Text>「#pjjc侦察 小号 22 0」优先使用阵容缓存，缓存不足时可能消耗挑战次数，默认侦察第 1 名。「#pjjc猜拳 小号 22」按排名调整进攻编队，0 表示随机错排，-1 表示最近一条对战记录。</Text>
+                            <Text>回刺和 PJJC 猜拳开始执行时，会暂停对应账号的后台雷达和自动换防上号 10 分钟。</Text>
                         </Stack>
                     </Box>
                 </Stack>
