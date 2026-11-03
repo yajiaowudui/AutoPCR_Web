@@ -18,6 +18,7 @@ import { Route as DailyValidateImport } from './routes/daily/validate'
 import { Route as DailyLoginImport } from './routes/daily/login'
 import { Route as DailySidebarImport } from './routes/daily/_sidebar'
 import { Route as DailySidebarUserIndexImport } from './routes/daily/_sidebar/user/index'
+import { Route as DailySidebarArenaIndexImport } from './routes/daily/_sidebar/arena/index'
 import { Route as DailySidebarAccountIndexImport } from './routes/daily/_sidebar/account/index'
 import { Route as DailySidebarAccountAccountImport } from './routes/daily/_sidebar/account/$account'
 
@@ -54,6 +55,11 @@ const DailySidebarRoute = DailySidebarImport.update({
 
 const DailySidebarUserIndexRoute = DailySidebarUserIndexImport.update({
   path: '/user/',
+  getParentRoute: () => DailySidebarRoute,
+} as any)
+
+const DailySidebarArenaIndexRoute = DailySidebarArenaIndexImport.update({
+  path: '/arena/',
   getParentRoute: () => DailySidebarRoute,
 } as any)
 
@@ -101,6 +107,10 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DailySidebarAccountIndexImport
       parentRoute: typeof DailySidebarImport
     }
+    '/daily/_sidebar/arena/': {
+      preLoaderRoute: typeof DailySidebarArenaIndexImport
+      parentRoute: typeof DailySidebarImport
+    }
     '/daily/_sidebar/user/': {
       preLoaderRoute: typeof DailySidebarUserIndexImport
       parentRoute: typeof DailySidebarImport
@@ -115,6 +125,7 @@ export const routeTree = rootRoute.addChildren([
     DailySidebarRoute.addChildren([
       DailySidebarAccountAccountRoute,
       DailySidebarAccountIndexRoute,
+      DailySidebarArenaIndexRoute,
       DailySidebarUserIndexRoute,
     ]),
     DailyLoginRoute,

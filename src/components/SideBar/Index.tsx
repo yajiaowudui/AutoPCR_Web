@@ -12,6 +12,7 @@ import {
 import {
     FiCompass,
     FiHome,
+    FiMessageSquare,
     FiUsers,
 } from 'react-icons/fi'
 import { Link, Outlet, useNavigate } from '@tanstack/react-router'
@@ -23,6 +24,7 @@ import { Route as InfoRoute } from "@routes/daily/_sidebar/account/index";
 import { Route as LoginRoute } from "@routes/daily/login";
 import { Tooltip } from '../../components/ui/tooltip'
 import { Route as UsersRoute } from "@routes/daily/_sidebar/user/index";
+import { Route as ArenaRoute } from "@routes/daily/_sidebar/arena/index";
 import { ValidateResponse } from '@/interfaces/Account'
 import autopcr from "@/assets/autopcr.svg"
 import { postLogout } from '@api/Login'
@@ -145,6 +147,9 @@ export default function Nav() {
                     <HStack as={'nav'} gap={isSmallScreen ? 1 : 4}>
                         <NavItem key="dashboard" href={InfoRoute.to} icon={FiHome} >
                             一览
+                        </NavItem>
+                        <NavItem key="arena" href={ArenaRoute.to} icon={FiMessageSquare}>
+                            竞技场消息
                         </NavItem>
                         {role?.admin && <NavItem key="user" href={UsersRoute.to} icon={FiUsers}>
                             用户管理

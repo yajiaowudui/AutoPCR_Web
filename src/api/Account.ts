@@ -13,7 +13,7 @@ const accountConfigCache = new Map<string, ModuleResponse>();
 const accountConfigRequests = new Map<string, Promise<ModuleResponse>>();
 let accountConfigCacheVersion = 0;
 
-interface BackgroundJobResponse<T> {
+export interface BackgroundJobResponse<T> {
   job_id: string;
   status: "running" | "completed" | "failed";
   order: string;
@@ -31,7 +31,7 @@ async function getActiveBackgroundJob<T>(alias: string) {
   return response.status === 200 ? response.data : null;
 }
 
-async function waitForBackgroundJob<T>(
+export async function waitForBackgroundJob<T>(
   alias: string,
   expectedOrder: string,
   job: BackgroundJobResponse<T>,
