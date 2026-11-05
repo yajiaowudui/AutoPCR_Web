@@ -1,9 +1,11 @@
-import { Alert, Badge, Box, Button, Circle, Flex, Heading, Input, Stack, Text } from '@chakra-ui/react'
+import { Alert, Badge, Box, Button, Circle, Flex, Heading, Image, Input, NativeSelect, Stack, Text } from '@chakra-ui/react'
 import { createFileRoute } from '@tanstack/react-router'
 import { isAxiosError } from 'axios'
 import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { FiCornerUpLeft, FiSend, FiUser, FiX, FiZap } from 'react-icons/fi'
 import { API, getErrorMessage } from '@api/APIUtils'
+import { getUserInfo } from '@api/Account'
+import { BATCH_RUNNER } from '@components/Account/accountShared'
 import { ResultInfo as ResultList } from '@components/Account/ResultInfo'
 import { ResultInfo } from '@interfaces/UserInfo'
 
@@ -53,7 +55,7 @@ interface ChatTurn {
     sentAt: number
     quote?: Pick<ChatQuote, 'label'>
     progress?: string
-    response?: { at: number; text: string; accounts?: AccountReply[] }
+    response?: { at: number; text: string; accounts?: AccountReply[]; batchImage?: string }
 }
 
 interface ChatHistory {
@@ -76,7 +78,7 @@ function isArenaFeed(data: unknown): data is ArenaFeed {
     return Array.isArray(feed.subscriptions) && Array.isArray(feed.events)
 }
 
-function ArenaPage() {
+function AssistantPage() {
     const [feed, setFeed] = useState<ArenaFeed>()
     const [error, setError] = useState('')
     const [refresh, setRefresh] = useState(0)
@@ -88,11 +90,28 @@ function ArenaPage() {
     const [historyError, setHistoryError] = useState('')
     const [commandError, setCommandError] = useState('')
     const [quote, setQuote] = useState<ChatQuote>()
+    const [aliases, setAliases] = useState<string[]>([])
+    const [alias, setAlias] = useState('')
+    const [accountError, setAccountError] = useState('')
     const inputRef = useRef<HTMLInputElement>(null)
     const timelineRef = useRef<HTMLDivElement>(null)
     const followLatest = useRef(true)
     const historyLoaded = useRef(false)
     const olderScroll = useRef<{ top: number; height: number } | null>(null)
+
+    useEffect(() => {
+        let active = true
+        void getUserInfo().then(info => {
+            if (!active) return
+            const names = (info.accounts ?? []).map(account => account.name).filter(name => name !== BATCH_RUNNER)
+            setAliases(names)
+            const preferred = info.default_account ?? ''
+            setAlias(names.includes(preferred) ? preferred : names.length === 1 ? names[0] : '')
+        }).catch(() => {
+            if (active) setAccountError('暂时无法加载游戏账号，可以在支持昵称的命令中手动填写。')
+        })
+        return () => { active = false }
+    }, [])
 
     useLayoutEffect(() => {
         const timeline = timelineRef.current
@@ -109,6 +128,12 @@ function ArenaPage() {
     function selectQuote(selected: ChatQuote, action: string) {
         setQuote(selected)
         setCommand(action)
+        inputRef.current?.focus()
+    }
+
+    function fillCommand(text: string) {
+        setQuote(undefined)
+        setCommand(text)
         inputRef.current?.focus()
     }
 
@@ -146,12 +171,14 @@ function ArenaPage() {
     async function runCommand() {
         const input = command.trim()
         if (!input || sending) return
+        if (/^#?清除公会绑定数据\s+确认$/.test(input)
+            && !window.confirm('清除所选账号在当前公会的考勤和助战缓存？')) return
         followLatest.current = true
         setSending(true)
         setCommandError('')
         try {
             await API.post('/arena/commands', {
-                command: input, quote: quote?.ref, quoteLabel: quote?.label,
+                command: input, alias, quote: quote?.ref, quoteLabel: quote?.label,
             }, { skipErrorHandler: true })
             setCommand('')
             setQuote(undefined)
@@ -281,15 +308,21 @@ function ArenaPage() {
                 ),
             }
             if (!turn.response) return [sent, {
-                key: `pending:${turn.id}`, at: turn.sentAt, own: false, sender: '竞技场助手',
+                key: `pending:${turn.id}`, at: turn.sentAt, own: false, sender: '聊天助手',
                 content: <Text whiteSpace="pre-wrap" role="status">{turn.progress || '正在处理命令…'}</Text>,
             }]
-            const { at, text, accounts } = turn.response
+            const { at, text, accounts, batchImage } = turn.response
             return [sent, {
-                key: `reply:${turn.id}`, at, own: false, sender: '竞技场助手',
+                key: `reply:${turn.id}`, at, own: false, sender: '聊天助手',
                 content: (
                     <Stack gap={2}>
                         {text && <Text whiteSpace="pre-wrap">{text}</Text>}
+                        {batchImage && (
+                            <Box as="details">
+                                <Box as="summary" cursor="pointer">批量结果汇总</Box>
+                                <Image src={batchImage} alt="批量结果汇总" maxW="full" loading="lazy" />
+                            </Box>
+                        )}
                         {accounts?.map((account, index) => (
                             <Box key={index}>
                                 <Text>{account.message}</Text>
@@ -320,15 +353,15 @@ function ArenaPage() {
                 <Flex gap={{ base: 2, md: 3 }} align="center" minW={0}>
                     <Circle size={{ base: 8, md: 10 }} flexShrink={0} bg="blue.solid" color="blue.contrast"><FiZap /></Circle>
                     <Box minW={0}>
-                        <Heading size="md">竞技场消息</Heading>
-                        <Text fontSize="xs" color="fg.muted">订阅提醒与竞技场命令</Text>
+                        <Heading size="md">聊天助手</Heading>
+                        <Text fontSize="xs" color="fg.muted">竞技场、公会和清日常命令</Text>
                     </Box>
                 </Flex>
                 <Button variant="outline" size="sm" flexShrink={0} onClick={() => setRefresh(value => value + 1)}>刷新</Button>
             </Flex>
             {feed && (
                 <Box as="details" fontSize="sm" px={2}>
-                    <Box as="summary" cursor="pointer">我的订阅（{feed.subscriptions.length}）</Box>
+                    <Box as="summary" cursor="pointer">竞技场订阅（{feed.subscriptions.length}）</Box>
                     <Flex wrap="wrap" gap={2} py={2}>
                         {feed.subscriptions.map(sub => (
                             <Badge key={`${sub.platform}:${sub.uid}`} variant="subtle" whiteSpace="normal">
@@ -352,15 +385,16 @@ function ArenaPage() {
                     <Button size="xs" variant="ghost" alignSelf="center" my={1} loading={loadingOlder}
                         onClick={() => void loadOlder()}>加载更早的命令</Button>
                 )}
-                <Stack ref={timelineRef} role="log" aria-label="竞技场聊天记录" tabIndex={0}
-                    bg="bg.subtle" gap={4} p={{ base: 3, md: 5 }} height="clamp(19rem, 62dvh, 48rem)"
+                <Stack ref={timelineRef} role="log" aria-label="助手聊天记录" tabIndex={0}
+                    bg="bg.subtle" gap={4} p={{ base: 3, md: 5 }}
+                    height={{ base: 'clamp(15rem, 48dvh, 30rem)', md: 'clamp(19rem, 62dvh, 48rem)' }}
                     overflowY="auto" onScroll={event => {
                         const { scrollHeight, scrollTop, clientHeight } = event.currentTarget
                         followLatest.current = scrollHeight - scrollTop - clientHeight < 60
                     }}>
                     {messages.length === 0 && (
                         <Text textAlign="center" my="auto" color="fg.muted" fontSize="sm">
-                            {!feed && !error ? '正在加载竞技场消息…' : '暂无消息。发送命令开始对话。'}
+                            {!feed && !error ? '正在加载消息…' : '暂无消息。发送命令开始对话。'}
                         </Text>
                     )}
                     {messages.map(message => (
@@ -370,6 +404,21 @@ function ArenaPage() {
                     ))}
                 </Stack>
                 <Stack gap={2} p={3} borderTopWidth="1px" bg="bg">
+                    <Flex wrap="wrap" gap={2} align="center">
+                        <NativeSelect.Root size="sm" w={{ base: 'full', sm: 'auto' }} minW={{ sm: '9rem' }}
+                            disabled={sending || !!quote}>
+                            <NativeSelect.Field aria-label="游戏账号" value={alias} onChange={event => setAlias(event.target.value)}>
+                                <option value="">默认账号</option>
+                                {aliases.map(name => <option key={name} value={name}>{name}</option>)}
+                            </NativeSelect.Field>
+                            <NativeSelect.Indicator />
+                        </NativeSelect.Root>
+                        {['清日常', '日常记录', '公会考勤表', '我的助战', 'jjccx'].map(action => (
+                            <Button key={action} size="xs" variant="outline" disabled={sending}
+                                onClick={() => fillCommand(action)}>{action}</Button>
+                        ))}
+                    </Flex>
+                    {accountError && <Text fontSize="xs" color="fg.muted">{accountError}</Text>}
                     {quote && (
                         <Flex align="center" gap={2} bg="bg.subtle" rounded="md" p={2}>
                             <Box flex={1} minW={0}>
@@ -390,8 +439,8 @@ function ArenaPage() {
                         event.preventDefault()
                         void runCommand()
                     }}>
-                        <Input ref={inputRef} minW={0} aria-label="竞技场命令" maxLength={300}
-                            placeholder={quote ? '输入引用回复' : '输入竞技场命令，例如 #pjjc记录'}
+                        <Input ref={inputRef} minW={0} aria-label="聊天助手命令" maxLength={300}
+                            placeholder={quote ? '输入引用回复' : '输入命令，例如 清日常'}
                             value={command} disabled={sending} onChange={event => setCommand(event.target.value)} />
                         <Button type="submit" flexShrink={0} colorPalette="blue" loading={sending} disabled={!command.trim()}>
                             <FiSend /> 发送
@@ -401,7 +450,22 @@ function ArenaPage() {
                     <Box as="details" fontSize="xs" color="fg.muted">
                         <Box as="summary" cursor="pointer">命令帮助</Box>
                         <Stack gap={1} pt={2}>
+                            <Text fontWeight="semibold">日常</Text>
+                            <Text>「清日常」运行所选账号，也可以发「清日常 小号」「清日常 批量」或「清日常所有」。「日常记录」查看全部账号的记录，「日常报告 0」查看所选账号的最新报告。</Text>
+                            <Text fontWeight="semibold" mt={2}>公会与支援</Text>
+                            <Flex wrap="wrap" gap={1}>
+                                {['上公会战支援', '上关卡支援', '上地下城支援'].map(action => (
+                                    <Button key={action} size="xs" variant="ghost" disabled={sending}
+                                        onClick={() => fillCommand(`${action} `)}>{action}</Button>
+                                ))}
+                            </Flex>
+                            <Text>选好账号后发送「上公会战支援 角色名 5」「上关卡支援 角色名」「上地下城支援 角色名」。用「我的助战」查看位置，用「更换支援 3」撤下 3 号位。</Text>
+                            <Text>公会命令包括「查公会成员 公会名」「更新公会数据」「公会考勤表」「公会深域查询」「精准助战 角色名」「公会BOX查询 角色名」「刷新BOX缓存 共享」「取消共享BOX」。「清除公会绑定数据 确认」只清理所选账号的考勤和助战缓存。</Text>
+                            <Text>「查公会 公会名 [会长名]」查询会战排名，「查公会成员 公会名」查看成员和练度。同名公会可用「查公会成员 ID 数字」选择。</Text>
+                            <Text>会战命令包括「Boss状态」「当前战报」「今日战报」「我的战报」「查询分段」「出刀监控」「取消出刀监控」「会战动态」「预约 3」「预约表」「申请出刀 3」「查树」「SL」「会战KPI」。</Text>
+                            <Text fontWeight="semibold" mt={2}>竞技场</Text>
                             <Text>「jjccx [UID]」查询排名。「竞技场订阅状态」「竞技场提醒 1100 1」「竞技场换防 00000 1」管理订阅。渠道服和台服可加「渠」或「台」前缀，序号 0 表示该服的全部订阅。</Text>
+                            <Text>「详细查询 1」按订阅序号查看排名、场次、公会、深域和支援，也可以直接填游戏 UID。</Text>
                             <Text>例如「#jjc记录 小号」「#pjjc透视 小号 flush」「#jjc回刺 小号 19 2」「#pjjc换防 小号」。昵称可换成「批量」或「所有」，省略时使用默认账号。</Text>
                             <Text>「#pjjc侦察 小号 22 0」优先使用阵容缓存，缓存不足时可能消耗挑战次数，默认侦察第 1 名。「#pjjc猜拳 小号 22」按排名调整进攻编队，0 表示随机错排，-1 表示最近一条对战记录。</Text>
                             <Text>回刺和 PJJC 猜拳开始执行时，会暂停对应账号的后台雷达和自动换防上号 10 分钟。</Text>
@@ -452,4 +516,4 @@ function ChatBubble({ own = false, sender, at, children }: {
     )
 }
 
-export const Route = createFileRoute('/daily/_sidebar/arena/')({ component: ArenaPage })
+export const Route = createFileRoute('/daily/_sidebar/arena/')({ component: AssistantPage })

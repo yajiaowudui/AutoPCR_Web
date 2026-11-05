@@ -143,7 +143,7 @@ export default function Nav() {
                             一览
                         </NavItem>
                         <NavItem key="arena" href={ArenaRoute.to} icon={FiMessageSquare}>
-                            竞技场消息
+                            聊天助手
                         </NavItem>
                         {role?.admin && <NavItem key="user" href={UsersRoute.to} icon={FiUsers}>
                             用户管理
